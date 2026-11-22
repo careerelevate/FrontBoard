@@ -74,7 +74,10 @@ googleProvider.addEventListener("click", () => {
   if (!googleTokenClient) return;
 
   googleTokenClient.callback = handleGoogleTokenResponse;
-  googleTokenClient.requestAccessToken({ prompt: "consent" });
+  googleTokenClient.requestAccessToken({
+    prompt: "consent",
+    include_granted_scopes: true
+  });
 });
 
 githubProvider.addEventListener("click", () => {
