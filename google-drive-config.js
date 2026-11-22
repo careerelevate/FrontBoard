@@ -1,7 +1,7 @@
 window.FRONTBOARD_DRIVE_CONFIG = {
   clientId: "93640889900-sqdou73fe5audfgrb47hq2hpj2a9i50u.apps.googleusercontent.com",
   githubClientId: "",
-  folderName: "Travel Plan",
+  folderName: "FrontBoard",
   scopes: "https://www.googleapis.com/auth/drive.file",
   discoveryDoc: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
 };

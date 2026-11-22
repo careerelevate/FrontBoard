@@ -6,8 +6,6 @@ const loadedFiles = document.querySelector("#loaded-files");
 const uploadStatus = document.querySelector("#upload-status");
 const fileCount = document.querySelector("#file-count");
 const clearTickets = document.querySelector("#clear-tickets");
-const connectDrive = document.querySelector("#connect-drive");
-const syncDrive = document.querySelector("#sync-drive");
 const driveStatus = document.querySelector("#drive-status");
 
 let tickets = [];
@@ -166,9 +164,6 @@ clearTickets.addEventListener("click", () => {
   renderTickets();
 });
 
-connectDrive.addEventListener("click", connectGoogleDrive);
-syncDrive.addEventListener("click", syncFromGoogleDrive);
-
 window.addEventListener("load", initializeGoogleDrive);
 
 function gapiLoaded() {
@@ -215,8 +210,8 @@ async function handleGoogleTokenResponse(response) {
   }
 
   try {
-    travelPlanFolderId = await ensureTravelPlanFolder();
-    driveStatus.textContent = "Travel Plan folder is ready";
+    travelPlanFolderId = await ensureFrontBoardFolderHierarchy();
+    driveStatus.textContent = "FrontBoard folder is ready";
     await syncFromGoogleDrive();
   } catch (error) {
     driveStatus.textContent = error.message;
@@ -298,38 +293,6 @@ function initializeGoogleDrive() {
   driveStatus.textContent = "Ready to connect";
 }
 
-function connectGoogleDrive() {
-  const config = window.FRONTBOARD_DRIVE_CONFIG;
-  if (!config?.clientId) {
-    driveStatus.textContent = "Google OAuth client ID is not configured";
-    return;
-  }
-  if (!window.google?.accounts?.oauth2) {
-    driveStatus.textContent = "Google Identity Services could not load";
-    return;
-  }
-  if (!googleTokenClient) initializeGoogleDrive();
-
-  googleTokenClient.callback = async (response) => {
-    if (response.error) {
-      driveStatus.textContent = `Google Drive connection failed: ${response.error}`;
-      return;
-    }
-    driveAccessToken = response.access_token;
-    connectDrive.textContent = "Drive connected";
-    syncDrive.disabled = false;
-    driveStatus.textContent = "Connecting to Travel Plan...";
-    try {
-      travelPlanFolderId = await ensureTravelPlanFolder();
-      driveStatus.textContent = "Travel Plan folder is ready";
-      await syncFromGoogleDrive();
-    } catch (error) {
-      driveStatus.textContent = error.message;
-    }
-  };
-  googleTokenClient.requestAccessToken({ prompt: "consent" });
-}
-
 async function driveRequest(url, options = {}) {
   if (!driveAccessToken) throw new Error("Google Drive is not connected");
   const response = await fetch(url, {
@@ -346,22 +309,43 @@ async function driveRequest(url, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-async function ensureTravelPlanFolder() {
-  const folderName = window.FRONTBOARD_DRIVE_CONFIG.folderName || "Travel Plan";
-  const query = encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${folderName.replaceAll("'", "\\'")}' and trashed=false`);
+async function ensureDriveChildFolder(parentId, folderName) {
+  const escapedName = folderName.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  const parentQuery = parentId ? `'${parentId}' in parents and ` : "";
+  const query = encodeURIComponent(`${parentQuery}mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and trashed=false`);
   const result = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&spaces=drive`);
   if (result.files?.length) return result.files[0].id;
 
+  const metadata = { name: folderName, mimeType: "application/vnd.google-apps.folder" };
+  if (parentId) metadata.parents = [parentId];
   return driveRequest("https://www.googleapis.com/drive/v3/files?fields=id,name", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder" })
+    body: JSON.stringify(metadata)
   }).then((folder) => folder.id);
+}
+
+async function ensureFrontBoardFolderHierarchy() {
+  const now = new Date();
+  const rootName = window.FRONTBOARD_DRIVE_CONFIG.folderName || "FrontBoard";
+  const yearName = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric"
+  }).format(now);
+  const monthName = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "long"
+  }).format(now);
+
+  const rootId = await ensureDriveChildFolder(null, rootName);
+  const yearId = await ensureDriveChildFolder(rootId, yearName);
+  travelPlanFolderId = await ensureDriveChildFolder(yearId, monthName);
+  return travelPlanFolderId;
 }
 
 async function uploadOriginalAndJson(file, parsed) {
   if (!driveAccessToken) return;
-  if (!travelPlanFolderId) travelPlanFolderId = await ensureTravelPlanFolder();
+  if (!travelPlanFolderId) travelPlanFolderId = await ensureFrontBoardFolderHierarchy();
 
   await uploadDriveFile(file, file.type || "application/octet-stream", travelPlanFolderId);
   for (const record of parsed) {
@@ -413,7 +397,7 @@ async function syncFromGoogleDrive() {
     return;
   }
   try {
-    if (!travelPlanFolderId) travelPlanFolderId = await ensureTravelPlanFolder();
+    if (!travelPlanFolderId) travelPlanFolderId = await ensureFrontBoardFolderHierarchy();
     const query = encodeURIComponent(`'${travelPlanFolderId}' in parents and mimeType='application/json' and trashed=false`);
     const result = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&spaces=drive`);
     const storedRecords = [];

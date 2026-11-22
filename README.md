@@ -21,7 +21,7 @@ npx serve .
 - Local Travel Document Intelligence Agent
 - Confidence scores and extraction review flags
 - Layout-aware flight itinerary extraction
-- Google Drive storage in a `Travel Plan` folder
+- Google Drive storage in `FrontBoard/<year>/<month>` folders
 - Original documents plus normalized JSON records in Drive
 - Sync extracted JSON records back into the UI
 - Google account sign-in
@@ -36,13 +36,13 @@ npx serve .
 window.FRONTBOARD_DRIVE_CONFIG = {
   clientId: "YOUR_CLIENT_ID.apps.googleusercontent.com",
   githubClientId: "YOUR_GITHUB_OAUTH_CLIENT_ID",
-  folderName: "Travel Plan",
+  folderName: "FrontBoard",
   scopes: "https://www.googleapis.com/auth/drive.file"
 };
 ```
 
-After connecting Google Drive, FrontBoard creates or finds `Travel Plan`, uploads each original document, creates a normalized JSON record for each extracted ticket, and can sync those JSON records back into the board.
+After Google sign-in, FrontBoard creates or finds `FrontBoard`, then creates or finds the current year and month folders. It uploads the original document and a normalized JSON record directly inside the current month folder.
 
 The top-right **Sign in** button opens Google Identity Services after `clientId` is configured.
 
-Use `apis.google.com/js/api.js` for Google Drive discovery and `accounts.google.com/gsi/client` for account authentication. Sign-in retrieves the Google profile name, stores it in the browser, and initializes the user's `Travel Plan` folder.
+Use `apis.google.com/js/api.js` for Google Drive discovery and `accounts.google.com/gsi/client` for account authentication. Sign-in retrieves the Google profile name and initializes `FrontBoard/<year>/<month>`.
