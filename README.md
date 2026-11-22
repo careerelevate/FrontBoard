@@ -46,3 +46,15 @@ After Google sign-in, FrontBoard creates or finds `FrontBoard`, then creates or 
 The top-right **Sign in** button opens Google Identity Services after `clientId` is configured.
 
 Use `apis.google.com/js/api.js` for Google Drive discovery and `accounts.google.com/gsi/client` for account authentication. Sign-in retrieves the Google profile name and initializes `FrontBoard/<year>/<month>`.
+
+## Privacy and security controls
+
+- Guest documents are parsed locally and are not sent to a FrontBoard server.
+- Google OAuth is used only after explicit user consent.
+- The OAuth client secret is not stored in or shipped with this browser repository.
+- Access tokens remain in browser memory and are not persisted to local storage.
+- Signed-in user profile metadata is stored in local storage for interface display.
+- Uploaded document data remains in the signed-in user's Google Drive.
+- Users can sign out, revoke Google access, clear the board, and delete Drive files.
+- Public pages use HTTPS through GitHub Pages.
+- Legal pages: `privacy.html` and `terms.html`.
