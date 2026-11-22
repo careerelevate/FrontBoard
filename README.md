@@ -1,6 +1,7 @@
 # FrontBoard
-
 A responsive travel-ticket board built with HTML, CSS, and JavaScript.
+
+This repository captures planned travel and scheduling information.
 
 ## Run locally
 
