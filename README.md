@@ -44,3 +44,5 @@ window.FRONTBOARD_DRIVE_CONFIG = {
 After connecting Google Drive, FrontBoard creates or finds `Travel Plan`, uploads each original document, creates a normalized JSON record for each extracted ticket, and can sync those JSON records back into the board.
 
 The top-right **Sign in** button opens Google Identity Services after `clientId` is configured.
+
+Use `apis.google.com/js/api.js` for Google Drive discovery and `accounts.google.com/gsi/client` for account authentication. Sign-in retrieves the Google profile name, stores it in the browser, and initializes the user's `Travel Plan` folder.

@@ -2,5 +2,13 @@ window.FRONTBOARD_DRIVE_CONFIG = {
   clientId: "",
   githubClientId: "",
   folderName: "Travel Plan",
-  scopes: "https://www.googleapis.com/auth/drive.file"
+  scopes: "https://www.googleapis.com/auth/drive.file",
+  discoveryDoc: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+};
+
+window.DRIVE_CONFIG = {
+  CLIENT_ID: window.FRONTBOARD_DRIVE_CONFIG.clientId,
+  SCOPES: window.FRONTBOARD_DRIVE_CONFIG.scopes,
+  DISCOVERY_DOC: window.FRONTBOARD_DRIVE_CONFIG.discoveryDoc,
+  DEFAULT_FOLDER_NAME: window.FRONTBOARD_DRIVE_CONFIG.folderName
 };

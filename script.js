@@ -15,6 +15,8 @@ let activeFilter = "All tickets";
 let driveAccessToken = null;
 let travelPlanFolderId = null;
 let googleTokenClient = null;
+let gapiInited = false;
+let gisInited = false;
 
 const appShell = document.querySelector("#app-shell");
 const signInFallback = document.querySelector("#google-sign-in-fallback");
@@ -24,6 +26,20 @@ const signedInAvatar = document.querySelector("#signed-in-avatar");
 const signInDialog = document.querySelector("#sign-in-dialog");
 const googleProvider = document.querySelector("#google-provider");
 const githubProvider = document.querySelector("#github-provider");
+
+signedInUser.addEventListener("click", () => {
+  if (!driveAccessToken) return;
+  window.google?.accounts?.oauth2?.revoke(driveAccessToken, () => {});
+  driveAccessToken = null;
+  travelPlanFolderId = null;
+  localStorage.removeItem("frontboard-user");
+  signedInUser.hidden = true;
+  signInFallback.hidden = false;
+  const footerName = document.querySelector(".sidebar-footer strong");
+  const footerRole = document.querySelector(".sidebar-footer small");
+  if (footerName) footerName.textContent = "FrontBoard";
+  if (footerRole) footerRole.textContent = "Travel desk";
+});
 
 signInFallback.addEventListener("click", () => {
   if (typeof signInDialog?.showModal === "function") signInDialog.showModal();
@@ -36,7 +52,11 @@ googleProvider.addEventListener("click", () => {
     window.alert("Google sign-in needs a Google OAuth client ID in google-drive-config.js.");
     return;
   }
-  if (window.google?.accounts?.id) window.google.accounts.id.prompt();
+  if (!googleTokenClient) initializeGoogleDrive();
+  if (!googleTokenClient) return;
+
+  googleTokenClient.callback = handleGoogleTokenResponse;
+  googleTokenClient.requestAccessToken({ prompt: "consent" });
 });
 
 githubProvider.addEventListener("click", () => {
@@ -133,6 +153,58 @@ syncDrive.addEventListener("click", syncFromGoogleDrive);
 
 window.addEventListener("load", initializeGoogleDrive);
 
+function gapiLoaded() {
+  if (!window.gapi) return;
+  window.gapi.load("client", async () => {
+    try {
+      await window.gapi.client.init({
+        discoveryDocs: [window.FRONTBOARD_DRIVE_CONFIG.discoveryDoc]
+      });
+      gapiInited = true;
+    } catch (error) {
+      driveStatus.textContent = `Google Drive API could not initialize: ${error.message}`;
+    }
+  });
+}
+
+function gisLoaded() {
+  gisInited = true;
+  initializeGoogleDrive();
+}
+
+async function handleGoogleTokenResponse(response) {
+  if (response.error) {
+    driveStatus.textContent = `Google sign-in failed: ${response.error}`;
+    return;
+  }
+
+  driveAccessToken = response.access_token;
+  if (window.gapi?.client) window.gapi.client.setToken(response);
+
+  try {
+    const userResponse = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${driveAccessToken}` }
+    });
+    if (!userResponse.ok) throw new Error("Could not load your Google profile");
+    const user = await userResponse.json();
+    showSignedInUser({
+      name: user.name || user.email || "Google user",
+      email: user.email || "",
+      picture: user.picture || ""
+    });
+  } catch (error) {
+    driveStatus.textContent = error.message;
+  }
+
+  try {
+    travelPlanFolderId = await ensureTravelPlanFolder();
+    driveStatus.textContent = "Travel Plan folder is ready";
+    await syncFromGoogleDrive();
+  } catch (error) {
+    driveStatus.textContent = error.message;
+  }
+}
+
 function handleGoogleCredential(response) {
   try {
     const payload = JSON.parse(decodeURIComponent(escape(atob(response.credential.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))));
@@ -145,6 +217,7 @@ function handleGoogleCredential(response) {
 }
 
 function showSignedInUser(user) {
+  localStorage.setItem("frontboard-user", JSON.stringify(user));
   appShell.hidden = false;
   signInFallback.hidden = true;
   document.querySelector("#google-sign-in").hidden = true;
