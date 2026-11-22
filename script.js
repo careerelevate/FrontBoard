@@ -23,11 +23,12 @@ const signedInName = document.querySelector("#signed-in-name");
 const signedInAvatar = document.querySelector("#signed-in-avatar");
 
 signInFallback.addEventListener("click", () => {
-  if (window.google?.accounts?.id) {
-    window.google.accounts.id.prompt();
-  } else {
-    driveStatus.textContent = "Google Sign-In could not load";
+  const config = window.FRONTBOARD_DRIVE_CONFIG;
+  if (!config?.clientId) {
+    window.alert("Sign-in needs a Google OAuth client ID. Add it to google-drive-config.js.");
+    return;
   }
+  if (window.google?.accounts?.id) window.google.accounts.id.prompt();
 });
 
 function updateClock() {
@@ -148,8 +149,8 @@ function initializeGoogleDrive() {
   const config = window.FRONTBOARD_DRIVE_CONFIG;
   if (!config?.clientId) {
     signInFallback.textContent = "Sign in";
-    signInFallback.disabled = true;
-    driveStatus.textContent = "Set google-drive-config.js with a Google OAuth client ID";
+    signInFallback.disabled = false;
+    driveStatus.textContent = "Connect Google Drive after sign-in";
     return;
   }
   if (!window.google?.accounts?.oauth2) {
