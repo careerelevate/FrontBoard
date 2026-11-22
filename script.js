@@ -49,7 +49,8 @@ googleProvider.addEventListener("click", () => {
   signInDialog.close();
   const config = window.FRONTBOARD_DRIVE_CONFIG;
   if (!config?.clientId) {
-    window.alert("Google sign-in needs a Google OAuth client ID in google-drive-config.js.");
+    signInFallback.hidden = false;
+    signInFallback.blur();
     return;
   }
   if (!googleTokenClient) initializeGoogleDrive();
