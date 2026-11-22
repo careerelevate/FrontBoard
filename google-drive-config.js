@@ -1,5 +1,5 @@
 window.FRONTBOARD_DRIVE_CONFIG = {
-  clientId: "",
+  clientId: "93640889900-sqdou73fe5audfgrb47hq2hpj2a9i50u.apps.googleusercontent.com",
   githubClientId: "",
   folderName: "Travel Plan",
   scopes: "https://www.googleapis.com/auth/drive.file",
