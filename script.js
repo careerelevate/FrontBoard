@@ -21,14 +21,35 @@ const signInFallback = document.querySelector("#google-sign-in-fallback");
 const signedInUser = document.querySelector("#signed-in-user");
 const signedInName = document.querySelector("#signed-in-name");
 const signedInAvatar = document.querySelector("#signed-in-avatar");
+const signInDialog = document.querySelector("#sign-in-dialog");
+const googleProvider = document.querySelector("#google-provider");
+const githubProvider = document.querySelector("#github-provider");
 
 signInFallback.addEventListener("click", () => {
+  if (typeof signInDialog?.showModal === "function") signInDialog.showModal();
+});
+
+googleProvider.addEventListener("click", () => {
+  signInDialog.close();
   const config = window.FRONTBOARD_DRIVE_CONFIG;
   if (!config?.clientId) {
-    window.alert("Sign-in needs a Google OAuth client ID. Add it to google-drive-config.js.");
+    window.alert("Google sign-in needs a Google OAuth client ID in google-drive-config.js.");
     return;
   }
   if (window.google?.accounts?.id) window.google.accounts.id.prompt();
+});
+
+githubProvider.addEventListener("click", () => {
+  signInDialog.close();
+  const config = window.FRONTBOARD_DRIVE_CONFIG;
+  if (!config?.githubClientId) {
+    window.alert("GitHub sign-in needs a GitHub OAuth client ID in google-drive-config.js.");
+    return;
+  }
+  const redirectUri = `${window.location.origin}${window.location.pathname}`;
+  const state = crypto.randomUUID?.() || String(Date.now());
+  sessionStorage.setItem("frontboard-github-state", state);
+  window.location.assign(`https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(config.githubClientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user&state=${encodeURIComponent(state)}`);
 });
 
 function updateClock() {

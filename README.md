@@ -35,6 +35,7 @@ npx serve .
 ```javascript
 window.FRONTBOARD_DRIVE_CONFIG = {
   clientId: "YOUR_CLIENT_ID.apps.googleusercontent.com",
+  githubClientId: "YOUR_GITHUB_OAUTH_CLIENT_ID",
   folderName: "Travel Plan",
   scopes: "https://www.googleapis.com/auth/drive.file"
 };
