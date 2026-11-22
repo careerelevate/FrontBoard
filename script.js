@@ -143,13 +143,20 @@ function showSignedInUser(user) {
 }
 
 const savedUser = JSON.parse(localStorage.getItem("frontboard-user") || "null");
-if (savedUser) showSignedInUser(savedUser);
+if (savedUser && savedUser.name && savedUser.name !== "Google account") {
+  showSignedInUser(savedUser);
+} else if (savedUser) {
+  localStorage.removeItem("frontboard-user");
+}
 
 function initializeGoogleDrive() {
   const config = window.FRONTBOARD_DRIVE_CONFIG;
   if (!config?.clientId) {
     signInFallback.textContent = "Sign in";
     signInFallback.disabled = false;
+    signInFallback.hidden = false;
+    document.querySelector("#google-sign-in").hidden = true;
+    if (signedInUser) signedInUser.hidden = true;
     driveStatus.textContent = "Connect Google Drive after sign-in";
     return;
   }
