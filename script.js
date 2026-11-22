@@ -26,10 +26,19 @@ const signedInAvatar = document.querySelector("#signed-in-avatar");
 const signInDialog = document.querySelector("#sign-in-dialog");
 const googleProvider = document.querySelector("#google-provider");
 const githubProvider = document.querySelector("#github-provider");
+const accountMenu = document.querySelector("#account-menu");
+const signOutButton = document.querySelector("#sign-out-button");
 
 signedInUser.addEventListener("click", () => {
-  if (!driveAccessToken) return;
-  window.google?.accounts?.oauth2?.revoke(driveAccessToken, () => {});
+  accountMenu.hidden = !accountMenu.hidden;
+});
+
+signOutButton.addEventListener("click", () => {
+  accountMenu.hidden = true;
+  if (driveAccessToken) {
+    window.google?.accounts?.oauth2?.revoke(driveAccessToken, () => {});
+  }
+  window.gapi?.client?.setToken(null);
   driveAccessToken = null;
   travelPlanFolderId = null;
   localStorage.removeItem("frontboard-user");
@@ -39,6 +48,14 @@ signedInUser.addEventListener("click", () => {
   const footerRole = document.querySelector(".sidebar-footer small");
   if (footerName) footerName.textContent = "FrontBoard";
   if (footerRole) footerRole.textContent = "Travel desk";
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".account-control")) accountMenu.hidden = true;
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") accountMenu.hidden = true;
 });
 
 signInFallback.addEventListener("click", () => {
