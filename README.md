@@ -24,6 +24,7 @@ npx serve .
 - Google Drive storage in a `Travel Plan` folder
 - Original documents plus normalized JSON records in Drive
 - Sync extracted JSON records back into the UI
+- Google account sign-in
 
 ## Google Drive setup
 

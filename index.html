@@ -12,6 +12,20 @@
     <script src="script.js" defer></script>
   </head>
   <body>
+    <section class="sign-in-screen" id="sign-in-screen" aria-label="Sign in">
+      <div class="sign-in-card">
+        <span class="sign-in-brand" aria-hidden="true">F</span>
+        <p class="eyebrow">WELCOME TO FRONTBOARD</p>
+        <h1>Sign in to manage travel plans</h1>
+        <p>Upload documents and securely connect your Google Drive.</p>
+        <div id="google-sign-in"></div>
+        <button class="sign-in-fallback" id="google-sign-in-fallback" type="button">
+          Continue with Google
+        </button>
+      </div>
+    </section>
+
+    <div class="app-shell" id="app-shell" hidden>
     <aside class="sidebar">
       <a class="brand" href="#" aria-label="FrontBoard home">
         <span class="brand-mark">F</span>
@@ -111,5 +125,6 @@
         </section>
       </aside>
     </main>
+    </div>
   </body>
 </html>

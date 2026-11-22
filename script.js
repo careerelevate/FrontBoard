@@ -16,6 +16,18 @@ let driveAccessToken = null;
 let travelPlanFolderId = null;
 let googleTokenClient = null;
 
+const signInScreen = document.querySelector("#sign-in-screen");
+const appShell = document.querySelector("#app-shell");
+const signInFallback = document.querySelector("#google-sign-in-fallback");
+
+signInFallback.addEventListener("click", () => {
+  if (window.google?.accounts?.id) {
+    window.google.accounts.id.prompt();
+  } else {
+    driveStatus.textContent = "Google Sign-In could not load";
+  }
+});
+
 function updateClock() {
   const now = new Date();
   const time = new Intl.DateTimeFormat("en-US", {
@@ -97,9 +109,38 @@ syncDrive.addEventListener("click", syncFromGoogleDrive);
 
 window.addEventListener("load", initializeGoogleDrive);
 
+function handleGoogleCredential(response) {
+  try {
+    const payload = JSON.parse(decodeURIComponent(escape(atob(response.credential.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))));
+    const name = payload.name || payload.email || "Google user";
+    localStorage.setItem("frontboard-user", JSON.stringify({ name, email: payload.email || "", picture: payload.picture || "" }));
+    showSignedInUser({ name, email: payload.email || "", picture: payload.picture || "" });
+  } catch (error) {
+    driveStatus.textContent = "Google sign-in could not be read";
+  }
+}
+
+function showSignedInUser(user) {
+  signInScreen.hidden = true;
+  appShell.hidden = false;
+  const footerName = document.querySelector(".sidebar-footer strong");
+  const footerRole = document.querySelector(".sidebar-footer small");
+  const avatar = document.querySelector(".sidebar-footer .avatar");
+  if (footerName) footerName.textContent = user.name;
+  if (footerRole) footerRole.textContent = user.email || "Travel desk";
+  if (avatar) {
+    avatar.textContent = user.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  }
+}
+
+const savedUser = JSON.parse(localStorage.getItem("frontboard-user") || "null");
+if (savedUser) showSignedInUser(savedUser);
+
 function initializeGoogleDrive() {
   const config = window.FRONTBOARD_DRIVE_CONFIG;
   if (!config?.clientId) {
+    signInFallback.textContent = "Google sign-in is not configured";
+    signInFallback.disabled = true;
     driveStatus.textContent = "Set google-drive-config.js with a Google OAuth client ID";
     return;
   }
@@ -107,6 +148,19 @@ function initializeGoogleDrive() {
     driveStatus.textContent = "Google Identity Services could not load";
     return;
   }
+
+  window.google.accounts.id.initialize({
+    client_id: config.clientId,
+    callback: handleGoogleCredential
+  });
+  window.google.accounts.id.renderButton(document.querySelector("#google-sign-in"), {
+    theme: "outline",
+    size: "large",
+    shape: "pill",
+    text: "continue_with",
+    width: 220
+  });
+  signInFallback.hidden = true;
 
   googleTokenClient = window.google.accounts.oauth2.initTokenClient({
     client_id: config.clientId,
