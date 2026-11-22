@@ -15,6 +15,7 @@ let travelPlanFolderId = null;
 let googleTokenClient = null;
 let gapiInited = false;
 let gisInited = false;
+const pendingDriveUploads = [];
 
 const appShell = document.querySelector("#app-shell");
 const signInFallback = document.querySelector("#google-sign-in-fallback");
@@ -33,6 +34,7 @@ signedInUser.addEventListener("click", () => {
 
 signOutButton.addEventListener("click", () => {
   accountMenu.hidden = true;
+  pendingDriveUploads.length = 0;
   if (driveAccessToken) {
     window.google?.accounts?.oauth2?.revoke(driveAccessToken, () => {});
   }
@@ -213,6 +215,10 @@ async function handleGoogleTokenResponse(response) {
     travelPlanFolderId = await ensureFrontBoardFolderHierarchy();
     driveStatus.textContent = "FrontBoard folder is ready";
     await syncFromGoogleDrive();
+    while (pendingDriveUploads.length) {
+      const pending = pendingDriveUploads.shift();
+      await uploadOriginalAndJson(pending.file, pending.parsed);
+    }
   } catch (error) {
     driveStatus.textContent = error.message;
   }
@@ -480,6 +486,9 @@ async function processFiles(files) {
         } catch (error) {
           driveStatus.textContent = `Drive storage failed: ${error.message}`;
         }
+      } else {
+        pendingDriveUploads.push({ file, parsed });
+        driveStatus.textContent = "Document queued; sign in with Google to save it to Drive";
       }
     } catch (error) {
       addLoadedFile(file.name, 0, error.message);
@@ -560,10 +569,10 @@ function runTravelIntelligence(fileName, evidenceText, parsedRecords) {
   return parsedRecords.map((record, index) => {
     const evidence = evidenceText.slice(0, 5000);
     const text = `${evidence}\n${Object.values(record).join(" ")}`;
-    const documentType = /\bhotel|reservation|check.?in|check.?out\b/i.test(text)
-      ? "hotel"
-      : /\bflight|airline|boarding|airport|pnr\b/i.test(text)
-        ? "flight"
+    const documentType = /\b(?:flight|airline|boarding|airport|e-ticket|departure\s+\d{1,2}\s+[a-z]+|arrival\s+\d{1,2}\s+[a-z]+)\b/i.test(text)
+      ? "flight"
+      : /\bhotel|reservation|check.?in|check.?out\b/i.test(text)
+        ? "hotel"
         : /\btrain|railway|coach|pnr\b/i.test(text)
           ? "train"
           : /\bbus|ticket id|boarding point|traveller details\b/i.test(text)
