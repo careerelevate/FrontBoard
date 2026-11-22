@@ -16,9 +16,11 @@ let driveAccessToken = null;
 let travelPlanFolderId = null;
 let googleTokenClient = null;
 
-const signInScreen = document.querySelector("#sign-in-screen");
 const appShell = document.querySelector("#app-shell");
 const signInFallback = document.querySelector("#google-sign-in-fallback");
+const signedInUser = document.querySelector("#signed-in-user");
+const signedInName = document.querySelector("#signed-in-name");
+const signedInAvatar = document.querySelector("#signed-in-avatar");
 
 signInFallback.addEventListener("click", () => {
   if (window.google?.accounts?.id) {
@@ -121,8 +123,14 @@ function handleGoogleCredential(response) {
 }
 
 function showSignedInUser(user) {
-  signInScreen.hidden = true;
   appShell.hidden = false;
+  signInFallback.hidden = true;
+  document.querySelector("#google-sign-in").hidden = true;
+  if (signedInUser) signedInUser.hidden = false;
+  if (signedInName) signedInName.textContent = user.name;
+  if (signedInAvatar) {
+    signedInAvatar.textContent = user.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  }
   const footerName = document.querySelector(".sidebar-footer strong");
   const footerRole = document.querySelector(".sidebar-footer small");
   const avatar = document.querySelector(".sidebar-footer .avatar");
@@ -139,7 +147,7 @@ if (savedUser) showSignedInUser(savedUser);
 function initializeGoogleDrive() {
   const config = window.FRONTBOARD_DRIVE_CONFIG;
   if (!config?.clientId) {
-    signInFallback.textContent = "Google sign-in is not configured";
+    signInFallback.textContent = "Sign in";
     signInFallback.disabled = true;
     driveStatus.textContent = "Set google-drive-config.js with a Google OAuth client ID";
     return;

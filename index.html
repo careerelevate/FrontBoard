@@ -12,20 +12,7 @@
     <script src="script.js" defer></script>
   </head>
   <body>
-    <section class="sign-in-screen" id="sign-in-screen" aria-label="Sign in">
-      <div class="sign-in-card">
-        <span class="sign-in-brand" aria-hidden="true">F</span>
-        <p class="eyebrow">WELCOME TO FRONTBOARD</p>
-        <h1>Sign in to manage travel plans</h1>
-        <p>Upload documents and securely connect your Google Drive.</p>
-        <div id="google-sign-in"></div>
-        <button class="sign-in-fallback" id="google-sign-in-fallback" type="button">
-          Continue with Google
-        </button>
-      </div>
-    </section>
-
-    <div class="app-shell" id="app-shell" hidden>
+    <div class="app-shell" id="app-shell">
     <aside class="sidebar">
       <a class="brand" href="#" aria-label="FrontBoard home">
         <span class="brand-mark">F</span>
@@ -58,10 +45,22 @@
             <p class="eyebrow">TRAVEL FEED</p>
             <h1 id="view-title">Upcoming tickets</h1>
           </div>
-          <label class="search-box">
-            <span aria-hidden="true">⌕</span>
-            <input id="ticket-search" type="search" placeholder="Search tickets" aria-label="Search tickets">
-          </label>
+          <div class="header-tools">
+            <label class="search-box">
+              <span aria-hidden="true">⌕</span>
+              <input id="ticket-search" type="search" placeholder="Search tickets" aria-label="Search tickets">
+            </label>
+            <div class="account-control">
+              <div id="google-sign-in"></div>
+              <button class="sign-in-fallback" id="google-sign-in-fallback" type="button">
+                Sign in
+              </button>
+              <button class="signed-in-user" id="signed-in-user" type="button" hidden>
+                <span class="signed-in-avatar" id="signed-in-avatar" aria-hidden="true">G</span>
+                <span id="signed-in-name">Google account</span>
+              </button>
+            </div>
+          </div>
         </header>
 
         <div class="summary-row" aria-label="Ticket summary">
