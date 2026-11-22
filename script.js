@@ -6,9 +6,15 @@ const loadedFiles = document.querySelector("#loaded-files");
 const uploadStatus = document.querySelector("#upload-status");
 const fileCount = document.querySelector("#file-count");
 const clearTickets = document.querySelector("#clear-tickets");
+const connectDrive = document.querySelector("#connect-drive");
+const syncDrive = document.querySelector("#sync-drive");
+const driveStatus = document.querySelector("#drive-status");
 
 let tickets = [];
 let activeFilter = "All tickets";
+let driveAccessToken = null;
+let travelPlanFolderId = null;
+let googleTokenClient = null;
 
 function updateClock() {
   const now = new Date();
@@ -86,6 +92,209 @@ clearTickets.addEventListener("click", () => {
   renderTickets();
 });
 
+connectDrive.addEventListener("click", connectGoogleDrive);
+syncDrive.addEventListener("click", syncFromGoogleDrive);
+
+window.addEventListener("load", initializeGoogleDrive);
+
+function initializeGoogleDrive() {
+  const config = window.FRONTBOARD_DRIVE_CONFIG;
+  if (!config?.clientId) {
+    driveStatus.textContent = "Set google-drive-config.js with a Google OAuth client ID";
+    return;
+  }
+  if (!window.google?.accounts?.oauth2) {
+    driveStatus.textContent = "Google Identity Services could not load";
+    return;
+  }
+
+  googleTokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: config.clientId,
+    scope: config.scopes,
+    callback: () => {}
+  });
+  driveStatus.textContent = "Ready to connect";
+}
+
+function connectGoogleDrive() {
+  const config = window.FRONTBOARD_DRIVE_CONFIG;
+  if (!config?.clientId) {
+    driveStatus.textContent = "Google OAuth client ID is not configured";
+    return;
+  }
+  if (!window.google?.accounts?.oauth2) {
+    driveStatus.textContent = "Google Identity Services could not load";
+    return;
+  }
+  if (!googleTokenClient) initializeGoogleDrive();
+
+  googleTokenClient.callback = async (response) => {
+    if (response.error) {
+      driveStatus.textContent = `Google Drive connection failed: ${response.error}`;
+      return;
+    }
+    driveAccessToken = response.access_token;
+    connectDrive.textContent = "Drive connected";
+    syncDrive.disabled = false;
+    driveStatus.textContent = "Connecting to Travel Plan...";
+    try {
+      travelPlanFolderId = await ensureTravelPlanFolder();
+      driveStatus.textContent = "Travel Plan folder is ready";
+      await syncFromGoogleDrive();
+    } catch (error) {
+      driveStatus.textContent = error.message;
+    }
+  };
+  googleTokenClient.requestAccessToken({ prompt: "consent" });
+}
+
+async function driveRequest(url, options = {}) {
+  if (!driveAccessToken) throw new Error("Google Drive is not connected");
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${driveAccessToken}`
+    }
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Google Drive request failed (${response.status})${detail ? `: ${detail}` : ""}`);
+  }
+  return response.status === 204 ? null : response.json();
+}
+
+async function ensureTravelPlanFolder() {
+  const folderName = window.FRONTBOARD_DRIVE_CONFIG.folderName || "Travel Plan";
+  const query = encodeURIComponent(`mimeType='application/vnd.google-apps.folder' and name='${folderName.replaceAll("'", "\\'")}' and trashed=false`);
+  const result = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&spaces=drive`);
+  if (result.files?.length) return result.files[0].id;
+
+  return driveRequest("https://www.googleapis.com/drive/v3/files?fields=id,name", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder" })
+  }).then((folder) => folder.id);
+}
+
+async function uploadOriginalAndJson(file, parsed) {
+  if (!driveAccessToken) return;
+  if (!travelPlanFolderId) travelPlanFolderId = await ensureTravelPlanFolder();
+
+  await uploadDriveFile(file, file.type || "application/octet-stream", travelPlanFolderId);
+  for (const record of parsed) {
+    const content = JSON.stringify({
+      schema_version: "1.0",
+      source_document: file.name,
+      extracted_at: new Date().toISOString(),
+      document: record.intelligence || runTravelIntelligence(file.name, "", [record])[0].intelligence,
+      evidence: record.evidence || null,
+      confidence: record.confidence || null,
+      flags: record.flags || []
+    }, null, 2);
+    const filename = `${slugify(record.intelligence?.document_type || record.type || "travel")}-${slugify(record.intelligence?.booking_reference || record.number || "document")}-${Date.now()}.json`;
+    await uploadDriveFile(new Blob([content], { type: "application/json" }), "application/json", travelPlanFolderId, filename);
+  }
+}
+
+async function uploadDriveFile(blob, mimeType, folderId, filename) {
+  const fileName = filename || blob.name;
+  if (!fileName) throw new Error("A filename is required");
+
+  const metadata = { name: fileName, mimeType, parents: [folderId] };
+  const boundary = `frontboard_${crypto.randomUUID?.() || Date.now()}`;
+  const bytes = await blob.arrayBuffer();
+  const decoder = new TextDecoder();
+  const metadataPrefix = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`;
+  const suffix = `\r\n--${boundary}--`;
+  const body = new Blob([
+    metadataPrefix,
+    bytes,
+    suffix
+  ]);
+
+  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${driveAccessToken}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`
+    },
+    body
+  });
+  if (!response.ok) throw new Error(`Could not upload ${fileName}: ${response.status}`);
+  return response.json();
+}
+
+async function syncFromGoogleDrive() {
+  if (!driveAccessToken) {
+    driveStatus.textContent = "Connect Google Drive before syncing";
+    return;
+  }
+  try {
+    if (!travelPlanFolderId) travelPlanFolderId = await ensureTravelPlanFolder();
+    const query = encodeURIComponent(`'${travelPlanFolderId}' in parents and mimeType='application/json' and trashed=false`);
+    const result = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&spaces=drive`);
+    const storedRecords = [];
+    for (const file of result.files || []) {
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+        headers: { Authorization: `Bearer ${driveAccessToken}` }
+      });
+      if (!response.ok) continue;
+      const json = await response.json();
+      const record = travelJsonToTicket(json);
+      if (record) storedRecords.push(record);
+    }
+    if (storedRecords.length) {
+      tickets = mergeTicketsByReference(tickets, storedRecords);
+      renderTickets();
+    }
+    driveStatus.textContent = `${storedRecords.length} JSON record${storedRecords.length === 1 ? "" : "s"} synced`;
+  } catch (error) {
+    driveStatus.textContent = error.message;
+  }
+}
+
+function travelJsonToTicket(json) {
+  const document = json.document;
+  if (!document) return null;
+  const itinerary = document.itinerary?.[0] || {};
+  const passengers = document.passengers || [];
+  return {
+    type: document.document_type === "Flight" ? "Flight"
+      : document.document_type === "Train" ? "Train"
+        : document.document_type === "Hotel" ? "Hotel"
+          : document.document_type === "Bus" ? "Bus" : "Ticket",
+    number: document.booking_reference || "Not provided",
+    pnr: document.booking_reference || "Not provided",
+    date: itinerary.departure_date || "Date not provided",
+    time: itinerary.departure_time || "Time not provided",
+    origin: itinerary.origin || "",
+    destination: itinerary.destination || "",
+    passenger: passengers.map((passenger) => passenger.name).join(", ") || "Passenger not provided",
+    passengers,
+    seat: passengers.map((passenger) => passenger.seat).filter(Boolean).join(", ") || "Not assigned",
+    status: itinerary.status || "Confirmed",
+    evidence: json.evidence || null,
+    confidence: json.confidence || null,
+    flags: json.flags || [],
+    intelligence: document
+  };
+}
+
+function mergeTicketsByReference(localTickets, storedTickets) {
+  const merged = [...storedTickets];
+  localTickets.forEach((ticket) => {
+    const key = `${ticket.type}:${ticket.number}:${ticket.date}:${ticket.time}`;
+    const exists = merged.some((item) => `${item.type}:${item.number}:${item.date}:${item.time}` === key);
+    if (!exists) merged.push(ticket);
+  });
+  return merged;
+}
+
+function slugify(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) || "travel";
+}
+
 async function processFiles(files) {
   if (!files.length) return;
 
@@ -99,6 +308,13 @@ async function processFiles(files) {
       tickets.push(...parsed);
       parsedCount += parsed.length;
       addLoadedFile(file.name, parsed.length);
+      if (driveAccessToken) {
+        try {
+          await uploadOriginalAndJson(file, parsed);
+        } catch (error) {
+          driveStatus.textContent = `Drive storage failed: ${error.message}`;
+        }
+      }
     } catch (error) {
       addLoadedFile(file.name, 0, error.message);
     }
