@@ -20,3 +20,4 @@ npx serve .
 - Search and ticket-type filtering
 - Local Travel Document Intelligence Agent
 - Confidence scores and extraction review flags
+- Layout-aware flight itinerary extraction

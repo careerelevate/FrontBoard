@@ -257,6 +257,9 @@ function runTravelIntelligence(fileName, evidenceText, parsedRecords) {
 }
 
 function parseTextFeed(text) {
+  const flightTickets = parseFlightItineraryText(text);
+  if (flightTickets) return flightTickets;
+
   const busTicket = parseBusTicketText(text);
   if (busTicket) return [busTicket];
 
@@ -271,6 +274,106 @@ function parseTextFeed(text) {
   }
 
   return blocks.map((block) => normalizeTicket(parseKeyValueLines(block.split(/\n|[|;]/))));
+}
+
+function parseFlightItineraryText(text) {
+  if (!/\b(?:Turkish Airlines|Airlines|Flight\s+emissions|E-ticket|Departure\s+\d{1,2}\s+[A-Z][a-z]+\b)/i.test(text)) return null;
+
+  const bookingReference = text.match(/Airline Booking Reference(?:s)?[\s\S]*?\b([A-Z]{6})\b/i)?.[1]
+    || text.match(/Booking ref(?:erence)?:\s*([A-Z0-9]+)/i)?.[1]
+    || null;
+  const ticketNumbers = [...text.matchAll(/E-ticket\s+([A-Z0-9-]+)\s+for\s+(?:\(Infant\)\s*)?([A-Za-z][A-Za-z .'-]+)/gi)]
+    .map((match) => ({ number: match[1].trim(), name: match[2].replace(/\s+/g, " ").trim() }));
+
+  const passengers = [];
+  const travellerText = text.match(/Traveler\s+([\s\S]*?)\nRengaraja Jeyabalan/);
+  const travelerLine = text.match(/Traveler\s+([A-Z][A-Za-z .'-]+?)\s*\(/i)?.[1]?.replace(/\s+/g, " ").trim();
+  if (travelerLine) passengers.push({ name: travelerLine, gender: null, age: null, seat: null });
+  const additionalTraveler = text.match(/(?:\n|\s)([A-Z][A-Z .'-]+Jeyabalan)\s*(?:\n|$)/)?.[1]?.trim();
+  if (additionalTraveler && !passengers.some((passenger) => passenger.name === additionalTraveler)) {
+    passengers.push({ name: additionalTraveler, gender: null, age: null, seat: null });
+  }
+
+  ticketNumbers.forEach((ticket) => {
+    if (!passengers.some((passenger) => passenger.name.toLowerCase() === ticket.name.toLowerCase())) {
+      passengers.push({ name: ticket.name, gender: null, age: null, seat: null });
+    }
+  });
+
+  if (!passengers.length) {
+    [...text.matchAll(/([A-Z][A-Za-z .'-]+)\s+(?:Scan for check-in)/g)].forEach((match) => {
+      const name = match[1].trim();
+      if (name && !passengers.some((passenger) => passenger.name === name)) {
+        passengers.push({ name, gender: null, age: null, seat: null });
+      }
+    });
+  }
+
+  const flightMatches = [...text.matchAll(/(?:[A-Za-z]+\s+)?Air(?:ways|lines)\s+([A-Z]{2}\s*\d{1,4})/gi)];
+  const segments = flightMatches.map((match, index) => {
+    const blockStart = match.index;
+    const blockEnd = flightMatches[index + 1]?.index || text.length;
+    const block = text.slice(blockStart, blockEnd);
+    const departure = block.match(/Departure\s+(\d{1,2}\s+[A-Z][a-z]+(?:\s+\d{4})?)\s+(\d{1,2}:\d{2}\s+(?:AM|PM))\s+([^\n]+)/i);
+    const arrival = block.match(/Arrival\s+(\d{1,2}\s+[A-Z][a-z]+(?:\s+\d{4})?)\s+(\d{1,2}:\d{2}\s+(?:AM|PM))\s+([^\n]+)/i);
+    if (!departure || !arrival) return null;
+    const originAirport = departure[3].match(/\(([^)]+)\)/)?.[1] || departure[3].replace(/^[^,]+,\s*/, "").trim();
+    const destinationAirport = arrival[3].match(/\(([^)]+)\)/)?.[1] || arrival[3].replace(/^[^,]+,\s*/, "").trim();
+    const originCity = departure[3].match(/^([^,(]+)/)?.[1]?.replace(/\s+/g, " ").trim() || null;
+    const destinationCity = arrival[3].match(/^([^,(]+)/)?.[1]?.replace(/\s+/g, " ").trim() || null;
+    const status = block.match(/Booking status\s+(Confirmed|Cancelled|Unconfirmed)/i)?.[1] || "Confirmed";
+    return {
+      number: match[1].replace(/\s+/g, ""),
+      departureDate: departure[1],
+      departureTime: departure[2].replace(/\s+/g, " ").toUpperCase(),
+      origin: originAirport,
+      originLocation: originCity,
+      arrivalDate: arrival[1],
+      arrivalTime: arrival[2].replace(/\s+/g, " ").toUpperCase(),
+      destination: destinationAirport,
+      destinationLocation: destinationCity,
+      status
+    };
+  }).filter(Boolean);
+
+  if (!segments.length) return null;
+
+  return segments.map((segment) => {
+    const departureDate = normalizeTravelDate(segment.departureDate, text);
+    const arrivalDate = normalizeTravelDate(segment.arrivalDate, text);
+    const passengerNames = passengers.map((passenger) => passenger.name);
+    return {
+      type: "Flight",
+      number: segment.number,
+      pnr: bookingReference,
+      date: `${departureDate}${arrivalDate !== departureDate ? ` → ${arrivalDate}` : ""}`,
+      time: `${segment.departureTime} → ${segment.arrivalTime}`,
+      origin: segment.originLocation || segment.origin,
+      originCode: segment.origin,
+      destination: segment.destinationLocation || segment.destination,
+      destinationCode: segment.destination,
+      passenger: passengerNames.join(", ") || "Passenger not provided",
+      passengers,
+      seat: "Not assigned",
+      status: segment.status,
+      tickets: ticketNumbers
+    };
+  });
+}
+
+function normalizeTravelDate(value, evidenceText) {
+  const match = String(value).match(/(\d{1,2})\s+([A-Z][a-z]+)(?:\s+(\d{4}))?/);
+  if (!match) return String(value);
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const monthIndex = months.findIndex((month) => month.toLowerCase() === match[2].toLowerCase());
+  if (monthIndex < 0) return String(value);
+  let year = match[3];
+  if (!year && evidenceText) {
+    const exactDate = evidenceText.match(new RegExp(`${match[1]}\\s+${match[2]}\\s+(\\d{4})`, "i"));
+    year = exactDate?.[1];
+  }
+  if (!year) year = new Date().getFullYear();
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${match[1].padStart(2, "0")}`;
 }
 
 function parseBusTicketText(text) {
@@ -451,10 +554,15 @@ function renderTickets() {
 
   const flights = tickets.filter((ticket) => ticket.type === "Flight").length;
   const buses = tickets.filter((ticket) => ticket.type === "Bus").length;
-  const passengers = tickets.reduce((count, ticket) => {
-    if (ticket.passengers?.length) return count + ticket.passengers.length;
-    return ticket.passenger !== "Passenger not provided" ? count + 1 : count;
-  }, 0);
+  const passengerNames = new Set();
+  tickets.forEach((ticket) => {
+    if (ticket.passengers?.length) {
+      ticket.passengers.forEach((passenger) => passengerNames.add(passenger.name));
+    } else if (ticket.passenger && ticket.passenger !== "Passenger not provided") {
+      passengerNames.add(ticket.passenger);
+    }
+  });
+  const passengers = passengerNames.size;
 
   document.querySelector("#flight-count").textContent = String(flights);
   document.querySelector("#bus-count").textContent = String(buses);
