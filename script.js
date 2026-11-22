@@ -125,7 +125,19 @@ async function readDocument(file) {
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const content = await page.getTextContent();
-      pages.push(content.items.map((item) => item.str).join(" "));
+      const lines = new Map();
+      content.items.forEach((item) => {
+        if (!item.str) return;
+        const y = Math.round(item.transform[5]);
+        const x = item.transform[4];
+        if (!lines.has(y)) lines.set(y, []);
+        lines.get(y).push({ x, text: item.str });
+      });
+      const pageText = [...lines.entries()]
+        .sort((a, b) => b[0] - a[0])
+        .map(([, items]) => items.sort((a, b) => a.x - b.x).map((item) => item.text).join(" "))
+        .join("\n");
+      pages.push(pageText);
     }
     return pages.join("\n");
   }
@@ -144,21 +156,104 @@ function parseDocument(fileName, text) {
         : Array.isArray(data.records)
           ? data.records
           : [data];
-    return rows.map(normalizeTicket).filter((ticket) => ticket.passenger || ticket.number || ticket.origin);
+    return runTravelIntelligence(fileName, text, rows.map(normalizeTicket));
   }
 
   if (extension === "csv") {
     const rows = parseCsv(text);
     if (!rows.length) return [];
     const headers = rows.shift().map((header) => normalizeKey(header));
-    return rows.filter((row) => row.some(Boolean)).map((row) => {
+    const parsed = rows.filter((row) => row.some(Boolean)).map((row) => {
       const object = {};
       headers.forEach((header, index) => { object[header] = row[index]?.trim() || ""; });
       return normalizeTicket(object);
     }).filter((ticket) => ticket.passenger || ticket.number || ticket.origin);
+    return runTravelIntelligence(fileName, text, parsed);
   }
 
-  return parseTextFeed(text);
+  return runTravelIntelligence(fileName, text, parseTextFeed(text));
+}
+
+function runTravelIntelligence(fileName, evidenceText, parsedRecords) {
+  return parsedRecords.map((record, index) => {
+    const evidence = evidenceText.slice(0, 5000);
+    const text = `${evidence}\n${Object.values(record).join(" ")}`;
+    const documentType = /\bhotel|reservation|check.?in|check.?out\b/i.test(text)
+      ? "hotel"
+      : /\bflight|airline|boarding|airport|pnr\b/i.test(text)
+        ? "flight"
+        : /\btrain|railway|coach|pnr\b/i.test(text)
+          ? "train"
+          : /\bbus|ticket id|boarding point|traveller details\b/i.test(text)
+            ? "bus"
+            : "other";
+
+    const normalized = documentType === "hotel"
+      ? "Hotel"
+      : documentType === "flight"
+        ? "Flight"
+        : documentType === "train"
+          ? "Train"
+          : documentType === "bus"
+            ? "Bus"
+            : "Ticket";
+
+    const confidence = {
+      document_type: documentType === "other" ? 0.2 : 0.88,
+      booking_reference: record.number && record.number !== "Not provided" ? 0.9 : 0.1,
+      itinerary: record.origin && record.destination ? 0.85 : 0.15,
+      passengers: record.passengers?.length ? 0.95 : (record.passenger !== "Passenger not provided" ? 0.7 : 0.1),
+      date: record.date && record.date !== "Date not provided" ? 0.85 : 0.1,
+      time: record.time && record.time !== "Time not provided" ? 0.85 : 0.1
+    };
+
+    const flags = [];
+    if (record.origin === "Origin not provided" || record.destination === "Destination not provided") {
+      flags.push("Journey origin or destination is unavailable.");
+    }
+    if (!record.passengers?.length && (!record.passenger || record.passenger === "Passenger not provided")) {
+      flags.push("No passenger details were found.");
+    }
+    if (record.date === "Date not provided") flags.push("Travel date was not found.");
+    if (record.time === "Time not provided") flags.push("Travel time was not found.");
+
+    const result = {
+      document_type: normalized,
+      document_name: fileName,
+      booking_reference: record.number && record.number !== "Not provided" ? record.number : null,
+      itinerary: [{
+        origin: record.origin || null,
+        destination: record.destination || null,
+        departure_date: record.date === "Date not provided" ? null : record.date,
+        departure_time: record.time === "Time not provided" ? null : record.time,
+        status: record.status || null
+      }],
+      passengers: record.passengers?.length
+        ? record.passengers.map((passenger) => ({
+            name: passenger.name,
+            gender: passenger.gender || null,
+            age: passenger.age ? Number(passenger.age) : null,
+            seat: passenger.seat || null
+          }))
+        : record.passenger && record.passenger !== "Passenger not provided"
+          ? [{ name: record.passenger, gender: null, age: null, seat: record.seat || null }]
+          : [],
+      currency: null,
+      total_amount: null,
+      evidence: evidence.slice(0, 500),
+      confidence,
+      flags
+    };
+
+    return {
+      ...record,
+      type: normalized,
+      evidence: result.evidence,
+      confidence: confidence,
+      flags: result.flags,
+      intelligence: result
+    };
+  });
 }
 
 function parseTextFeed(text) {
@@ -385,12 +480,26 @@ function renderTickets() {
         ).join("")
       : `<div><small>Passenger</small><strong>${escapeHtml(ticket.passenger)}</strong></div>
          <div><small>Seat</small><strong>${escapeHtml(ticket.seat)}</strong></div>`;
+    const averageConfidence = ticket.confidence
+      ? Math.round(Object.values(ticket.confidence).reduce((sum, value) => sum + value, 0) / Object.values(ticket.confidence).length * 100)
+      : null;
+    const reviewBadge = ticket.flags?.length
+      ? `<span class="ticket-status review-status">Review · ${escapeHtml(ticket.flags.length)}</span>`
+      : "";
+    const confidenceBadge = averageConfidence !== null
+      ? `<span class="confidence-badge">${averageConfidence}% confidence</span>`
+      : "";
+    const reviewDetails = ticket.flags?.length
+      ? `<div class="review-details"><small>Extraction flags</small>${ticket.flags.map((flag) => `<span>${escapeHtml(flag)}</span>`).join("")}</div>`
+      : "";
     return `<article class="ticket-card">
       <div class="ticket-rail ${ticket.type.toLowerCase()}"></div>
       <div class="ticket-main">
         <div class="ticket-heading">
           <span class="ticket-type ${ticket.type.toLowerCase()}">${icon} ${escapeHtml(ticket.type)}</span>
           <span class="ticket-status">${escapeHtml(ticket.status)}</span>
+          ${reviewBadge}
+          ${confidenceBadge}
         </div>
         <div class="ticket-route">${route}</div>
         <div class="ticket-number">${escapeHtml(ticket.number)}</div>
@@ -399,6 +508,7 @@ function renderTickets() {
         <div><small>Date</small><strong>${escapeHtml(ticket.date)}</strong></div>
         <div><small>Time</small><strong>${escapeHtml(ticket.time)}</strong></div>
         <div class="travellers"><small>Travellers</small>${passengerDetails}</div>
+        ${reviewDetails}
       </div>
     </article>`;
   }).join("");

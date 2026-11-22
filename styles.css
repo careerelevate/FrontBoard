@@ -238,6 +238,22 @@ h2 { font-size: 17px; }
   font-size: 10px;
   font-weight: 700;
 }
+.confidence-badge {
+  margin-left: auto;
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 800;
+}
+.review-status { background: #fff3e4; color: #aa7027; }
+.review-details {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
 .ticket-route { min-height: 35px; font-size: 18px; font-weight: 800; }
 .route-arrow { margin: 0 7px; color: var(--muted); }
 .ticket-number { margin-top: 7px; color: var(--muted); font-size: 11px; }

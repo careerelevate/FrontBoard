@@ -18,3 +18,5 @@ npx serve .
 - Flight and bus ticket cards
 - Passenger, date, time, route, and seat details
 - Search and ticket-type filtering
+- Local Travel Document Intelligence Agent
+- Confidence scores and extraction review flags
