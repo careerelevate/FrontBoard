@@ -2,7 +2,7 @@ window.FRONTBOARD_DRIVE_CONFIG = {
   clientId: "93640889900-sqdou73fe5audfgrb47hq2hpj2a9i50u.apps.googleusercontent.com",
   githubClientId: "",
   folderName: "FrontBoard",
-  scopes: "openid email profile https://www.googleapis.com/auth/drive.file",
+  scopes: "openid email profile https://www.googleapis.com/auth/drive",
   discoveryDoc: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
 };
 

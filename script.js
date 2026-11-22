@@ -320,7 +320,7 @@ async function driveRequest(url, options = {}) {
 
 async function ensureDriveChildFolder(parentId, folderName) {
   const escapedName = folderName.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
-  const parentQuery = parentId ? `'${parentId}' in parents and ` : "";
+  const parentQuery = parentId ? `'${parentId}' in parents and ` : "'root' in parents and ";
   const query = encodeURIComponent(`${parentQuery}mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and trashed=false`);
   const result = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&spaces=drive`);
   if (result.files?.length) return result.files[0].id;
@@ -370,6 +370,10 @@ async function uploadOriginalAndJson(file, parsed) {
     const filename = `${slugify(record.intelligence?.document_type || record.type || "travel")}-${slugify(record.intelligence?.booking_reference || record.number || "document")}-${Date.now()}.json`;
     await uploadDriveFile(new Blob([content], { type: "application/json" }), "application/json", travelPlanFolderId, filename);
   }
+  const now = new Date();
+  const year = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric" }).format(now);
+  const month = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "long" }).format(now);
+  driveStatus.textContent = `Saved to FrontBoard / ${year} / ${month}`;
 }
 
 async function uploadDriveFile(blob, mimeType, folderId, filename) {

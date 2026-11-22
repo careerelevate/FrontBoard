@@ -37,7 +37,7 @@ window.FRONTBOARD_DRIVE_CONFIG = {
   clientId: "YOUR_CLIENT_ID.apps.googleusercontent.com",
   githubClientId: "YOUR_GITHUB_OAUTH_CLIENT_ID",
   folderName: "FrontBoard",
-  scopes: "https://www.googleapis.com/auth/drive.file"
+  scopes: "openid email profile https://www.googleapis.com/auth/drive"
 };
 ```
 
