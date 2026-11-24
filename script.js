@@ -17,6 +17,30 @@ let gapiInited = false;
 let gisInited = false;
 const pendingDriveUploads = [];
 
+function savedUserIsSignedIn() {
+  try {
+    const user = JSON.parse(localStorage.getItem("frontboard-user") || "null");
+    return Boolean(user?.name);
+  } catch {
+    return false;
+  }
+}
+
+async function requestDriveAccessAndUploadPending() {
+  if (driveAccessToken) return;
+  if (!googleTokenClient) initializeGoogleDrive();
+  if (!googleTokenClient) {
+    driveStatus.textContent = "Google Drive could not initialize";
+    return;
+  }
+
+  googleTokenClient.callback = handleGoogleTokenResponse;
+  googleTokenClient.requestAccessToken({
+    prompt: "consent",
+    include_granted_scopes: true
+  });
+}
+
 const appShell = document.querySelector("#app-shell");
 const signInFallback = document.querySelector("#google-sign-in-fallback");
 const signedInUser = document.querySelector("#signed-in-user");
@@ -70,14 +94,8 @@ googleProvider.addEventListener("click", () => {
     signInFallback.blur();
     return;
   }
-  if (!googleTokenClient) initializeGoogleDrive();
-  if (!googleTokenClient) return;
-
-  googleTokenClient.callback = handleGoogleTokenResponse;
-  googleTokenClient.requestAccessToken({
-    prompt: "consent",
-    include_granted_scopes: true
-  });
+  initializeGoogleDrive();
+  if (window.google?.accounts?.id) window.google.accounts.id.prompt();
 });
 
 githubProvider.addEventListener("click", () => {
@@ -493,9 +511,12 @@ async function processFiles(files) {
         } catch (error) {
           driveStatus.textContent = `Drive storage failed: ${error.message}`;
         }
-      } else {
+      } else if (savedUserIsSignedIn()) {
         pendingDriveUploads.push({ file, parsed });
-        driveStatus.textContent = "Document queued; sign in with Google to save it to Drive";
+        driveStatus.textContent = "Sign-in complete. Drive consent is requested only when saving.";
+        await requestDriveAccessAndUploadPending();
+      } else {
+        driveStatus.textContent = "Parsed locally. Sign in to save documents in Google Drive.";
       }
     } catch (error) {
       addLoadedFile(file.name, 0, error.message);
