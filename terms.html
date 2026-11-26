@@ -11,13 +11,13 @@
       <a class="legal-back" href="./">&larr; Back to FrontBoard</a>
       <p class="eyebrow">LEGAL</p>
       <h1>Terms of Service</h1>
-      <p class="legal-effective">Effective date: November 22, 2026</p>
+      <p class="legal-effective">Effective date: November 26, 2026</p>
 
       <h2>Acceptance</h2>
       <p>By using FrontBoard, you agree to these Terms. If you do not agree, do not use the service.</p>
 
       <h2>Service</h2>
-      <p>FrontBoard displays and extracts information from travel documents. The service may operate as a guest or use Google Sign-In and Google Drive storage.</p>
+      <p>FrontBoard displays and extracts information from travel documents. Guest extraction runs locally in your browser. Google Sign-In identifies your account; it does not grant FrontBoard access to Google Drive. Cloud storage is optional and requires your affirmative acceptance of the in-app storage notice.</p>
 
       <h2>User responsibilities</h2>
       <ul>
@@ -31,10 +31,11 @@
       <p>Extraction is automated and may be incomplete or incorrect. Confidence scores and review flags do not guarantee accuracy. FrontBoard does not replace airline, bus, train, hotel, immigration, or travel-agent confirmation.</p>
 
       <h2>Guest use</h2>
-      <p>Guest uploads are processed in the browser and are not automatically written to Google Drive. Browser memory and local storage behavior may vary, and a reload or clearing browser data may remove records.</p>
+      <p>Guest uploads are processed in the browser and are not sent to FrontBoard cloud storage. Browser memory behavior may vary, and a reload or clearing browser data may remove records.</p>
 
-      <h2>Google account and Drive use</h2>
-      <p>Google Sign-In and Drive storage are optional and governed by your choices and Google's terms. By approving access, you authorize FrontBoard to create or identify its folder and upload or read relevant application records and documents.</p>
+      <h2>Google account and cloud storage</h2>
+      <p>Google Sign-In is used only to identify your account through Supabase Auth. If you accept the storage notice, FrontBoard uploads the selected original document and extracted JSON record to the private Supabase Storage bucket. Each account's objects are kept under a user-specific prefix and protected by Supabase Row Level Security; the bucket is not public.</p>
+      <p>You may decline the notice and continue to use local extraction. If you accept, you can delete each stored document and its related JSON from the saved documents list. Clearing the local board or signing out does not delete cloud-stored files.</p>
 
       <h2>Content and ownership</h2>
       <p>You retain rights in the documents you upload. FrontBoard does not claim ownership of your documents. You are responsible for any content you store and must ensure you have the right to do so.</p>
@@ -52,7 +53,7 @@
       <p>To the maximum extent permitted by law, FrontBoard and its operator are not liable for indirect, incidental, consequential, travel, booking, or lost-data damages arising from use of the service. Always verify with the travel provider.</p>
 
       <h2>Termination and deletion</h2>
-      <p>You may stop using FrontBoard at any time. Revoke Google access through Google Account Permissions and delete stored Drive files directly in Google Drive.</p>
+      <p>You may stop using FrontBoard at any time. You can sign out and delete stored documents from the saved documents list. Deleting a document removes its original, associated extracted JSON, and document metadata from FrontBoard's active Supabase storage. The consent record is retained. Provider-level handling is governed by Supabase's terms. Google account permissions can be reviewed at <a href="https://myaccount.google.com/permissions" rel="noopener">Google Account Permissions</a>.</p>
 
       <h2>Changes</h2>
       <p>These Terms may be updated. Continued use after an effective-date change indicates acceptance of the revised Terms.</p>

@@ -1,60 +1,49 @@
 # FrontBoard
-A responsive travel-ticket board built with HTML, CSS, and JavaScript.
 
-This repository captures planned travel and scheduling information.
-
-## Run locally
-
-Open `index.html` in a browser, or start a local server:
-
-```powershell
-npx serve .
-```
+A browser-based travel board that extracts flight, bus, train, and hotel details from uploaded documents.
 
 ## Features
 
-- Eastern Time clock
-- Drag-and-drop CSV, JSON, TXT, or PDF ticket documents
-- Flight and bus ticket cards
-- Passenger, date, time, route, and seat details
-- Search and ticket-type filtering
-- Local Travel Document Intelligence Agent
-- Confidence scores and extraction review flags
-- Layout-aware flight itinerary extraction
-- Google Drive storage in `FrontBoard/<year>/<month>` folders
-- Original documents plus normalized JSON records in Drive
-- Sync extracted JSON records back into the UI
-- Google account sign-in
+- Eastern Time clock, searchable ticket feed, and travel-type filters
+- Local extraction from CSV, JSON, TXT, and PDF
+- Google account sign-in for identity only; no Google Drive access is requested
+- First-upload notice and explicit consent before cloud storage
+- Private Supabase Storage for each original document and its extracted JSON
+- Per-user saved-document list with downloads and paired deletion
+- User-scoped object paths: `users/<supabase-user-id>/FrontBoard/<document-id>/`
 
-## Google Drive setup
+## Run locally
 
-1. Create an OAuth 2.0 Web application client in Google Cloud Console.
-2. Add `https://careerelevate.github.io` as an authorized JavaScript origin.
-3. Set the client ID in `google-drive-config.js`:
+Serve the project over HTTP rather than opening `index.html` directly:
 
-```javascript
-window.FRONTBOARD_DRIVE_CONFIG = {
-  clientId: "YOUR_CLIENT_ID.apps.googleusercontent.com",
-  githubClientId: "YOUR_GITHUB_OAUTH_CLIENT_ID",
-  folderName: "FrontBoard",
-  scopes: "openid email profile https://www.googleapis.com/auth/drive"
-};
+```powershell
+python -m http.server 8000
 ```
 
-After Google sign-in, FrontBoard creates or finds `FrontBoard`, then creates or finds the current year and month folders. It uploads the original document and a normalized JSON record directly inside the current month folder.
+Open `http://localhost:8000`. Add that origin to the Google OAuth client's authorized JavaScript origins if you test sign-in locally. The published origin is `https://careerelevate.github.io`.
 
-The top-right **Sign in** button opens Google Identity Services after `clientId` is configured.
+## Supabase setup
 
-Use `apis.google.com/js/api.js` for Google Drive discovery and `accounts.google.com/gsi/client` for account authentication. Sign-in retrieves the Google profile name and initializes `FrontBoard/<year>/<month>`.
+The current project uses Supabase Auth and a private Storage bucket. The Supabase JavaScript SDK is loaded from jsDelivr; no service-role or secret API key is used in the browser.
 
-## Privacy and security controls
+1. In Supabase, run [`supabase-setup.sql`](supabase-setup.sql) in the SQL Editor. It creates the RLS-protected metadata and consent tables, restricts the `frontboard-private` bucket to authenticated user paths, and applies the 15 MB file limit and accepted MIME types.
+2. In **Authentication → Sign In / Providers → Google**, enable Google sign-in and add the same Google client ID used by `frontboard-config.js`. FrontBoard uses Google One Tap ID tokens through `signInWithIdToken`; it does not use Supabase's redirect OAuth flow, so no client secret is needed for this configuration.
+3. Keep the Supabase project URL and **publishable** key in `frontboard-config.js`. Publishable keys are intended for public clients; never add a Supabase secret/service-role key to this repository.
+4. Ensure the Google OAuth client has the published site origin authorized. Add `http://localhost:8000` only when testing locally.
 
-- Guest documents are parsed locally and are not sent to a FrontBoard server.
-- Google OAuth is used only after explicit user consent.
-- The OAuth client secret is not stored in or shipped with this browser repository.
-- Access tokens remain in browser memory and are not persisted to local storage.
-- Signed-in user profile metadata is stored in local storage for interface display.
-- Uploaded document data remains in the signed-in user's Google Drive.
-- Users can sign out, revoke Google access, clear the board, and delete Drive files.
-- Public pages use HTTPS through GitHub Pages.
-- Legal pages: `privacy.html` and `terms.html`.
+The project URL and publishable key currently point to the FrontBoard Supabase project. If you replace that project, update both values and configure its Google provider and private bucket before publishing.
+
+### Storage behavior
+
+- Guest uploads are parsed locally and are not sent to Supabase.
+- On the first upload, signed-in users must accept the storage notice. Declining keeps the document local.
+- Accepted uploads store the original and a `record.json` file under the user's private storage prefix.
+- Supabase RLS policies scope consent, metadata, and file operations to the authenticated user. The bucket is not public.
+- **Delete** removes the original, its JSON file, and its metadata. **Clear local board** only clears the current browser view.
+- The Supabase auth session is held in memory and is not persisted across reloads. The account name and email are stored in browser local storage for display; no Google token is saved there.
+
+Review current [Supabase pricing](https://supabase.com/pricing) and usage limits before relying on cloud storage at scale.
+
+## Legal pages
+
+See [Privacy Policy](privacy.html) and [Terms of Service](terms.html) for current storage, consent, and deletion disclosures.

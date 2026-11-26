@@ -7,9 +7,10 @@
     <title>FrontBoard</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
-    <script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
-    <script src="https://accounts.google.com/gsi/client" async defer onload="gisLoaded()"></script>
-    <script src="google-drive-config.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" defer></script>
+    <script src="frontboard-config.js"></script>
+    <script src="frontboard-storage.js" defer></script>
     <script src="script.js" defer></script>
   </head>
   <body>
@@ -26,6 +27,22 @@
             </svg>
             <span>GitHub</span>
           </button>
+        </div>
+      </dialog>
+      <dialog class="storage-consent-dialog" id="storage-consent-dialog" aria-labelledby="storage-consent-title">
+        <div class="storage-consent-content">
+          <p class="eyebrow">YOUR DOCUMENTS</p>
+          <h2 id="storage-consent-title">Save documents to FrontBoard?</h2>
+          <p>FrontBoard will store the uploaded document and its extracted travel details in private cloud storage, organized under your Google account. Only your signed-in account can view or delete these files through FrontBoard.</p>
+          <p>You can delete any saved document and its associated travel JSON at any time from the saved documents list.</p>
+          <label class="storage-consent-check">
+            <input id="storage-consent-checkbox" type="checkbox">
+            <span>I understand and agree to store these documents in FrontBoard.</span>
+          </label>
+          <div class="storage-consent-actions">
+            <button id="storage-consent-decline" type="button">Not now</button>
+            <button id="storage-consent-accept" type="button" disabled>Agree and continue</button>
+          </div>
         </div>
       </dialog>
     <aside class="sidebar">
@@ -133,8 +150,18 @@
 
           <div class="loaded-files" id="loaded-files"></div>
           <p class="upload-status" id="upload-status" role="status" aria-live="polite">Waiting for a document</p>
-          <p class="drive-status" id="drive-status" role="status" aria-live="polite"></p>
-          <button class="clear-button" id="clear-tickets" type="button" disabled>Clear all tickets</button>
+          <p class="storage-status" id="storage-status" role="status" aria-live="polite"></p>
+          <section class="saved-documents-section" aria-labelledby="saved-documents-title">
+            <div class="saved-documents-heading">
+              <strong id="saved-documents-title">Saved documents</strong>
+              <span class="file-count" id="saved-document-count">0</span>
+            </div>
+            <div class="loaded-files" id="saved-documents" aria-live="polite">
+              <p class="saved-documents-empty">Sign in to view your saved documents.</p>
+            </div>
+          </section>
+          <button class="clear-button" id="clear-tickets" type="button" disabled>Clear local board</button>
+          <p class="storage-note">Clearing the board does not delete cloud files. Use Delete beside a saved document to remove it.</p>
           <nav class="legal-links" aria-label="Legal">
             <a href="privacy.html">Privacy Policy</a>
             <a href="terms.html">Terms of Service</a>
