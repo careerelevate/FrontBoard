@@ -65,6 +65,8 @@ signOutButton.addEventListener("click", async () => {
   localStorage.removeItem("frontboard-user");
   signedInUser.hidden = true;
   signInFallback.hidden = false;
+  ticketSearch.value = "";
+  setActiveView("All tickets");
   savedDocumentsElement.replaceChildren();
   const emptyMessage = document.createElement("p");
   emptyMessage.className = "saved-documents-empty";
@@ -138,16 +140,27 @@ function updateClock() {
   document.querySelector("#est-date").textContent = date;
 }
 
+function setActiveView(view) {
+  activeFilter = view;
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.classList.remove("active");
+    if (item.dataset.view === view) item.classList.add("active");
+  });
+  const titles = {
+    "All tickets": "Upcoming tickets",
+    Flights: "Upcoming flights",
+    Bus: "Upcoming bus trips",
+    "Travel history": "Travel history"
+  };
+  document.querySelector("#view-title").textContent = titles[view] || "Upcoming tickets";
+}
+
 updateClock();
 setInterval(updateClock, 1000);
 
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
-    document.querySelector(".nav-item.active")?.classList.remove("active");
-    item.classList.add("active");
-    activeFilter = item.dataset.view;
-    document.querySelector("#view-title").textContent =
-      activeFilter === "All tickets" ? "Upcoming tickets" : `${activeFilter} tickets`;
+    setActiveView(item.dataset.view);
     renderTickets();
   });
 });
@@ -199,6 +212,8 @@ async function handleGoogleCredential(response) {
   }
 
   supabaseUser = authUser;
+  ticketSearch.value = "";
+  setActiveView("All tickets");
   const user = {
     name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email || "Google user",
     email: authUser.email || ""
@@ -374,16 +389,30 @@ async function loadSavedDocuments() {
   if (!supabaseUser) return;
   const result = await window.frontboardStorage.listDocuments();
   cloudDocuments = result.documents;
-  const storedTickets = cloudDocuments.flatMap((document) =>
-    document.records.map((record) => travelJsonToTicket(record, document.id))
-      .filter(Boolean)
-  );
+  const storedTickets = [];
+  let unrenderableRecords = 0;
+  cloudDocuments.forEach((document) => {
+    document.records.forEach((record) => {
+      const ticket = travelJsonToTicket(record, document.id);
+      if (ticket) storedTickets.push(ticket);
+      else unrenderableRecords += 1;
+    });
+  });
   tickets = [...storedTickets, ...tickets.filter((ticket) => !ticket.documentId)];
+  const historyCount = storedTickets.filter(isTravelHistory).length;
+  const upcomingCount = storedTickets.length - historyCount;
+  if (!upcomingCount && historyCount) setActiveView("Travel history");
   renderSavedDocuments();
   renderTickets();
-  storageStatus.textContent = cloudDocuments.length
-    ? `Loaded ${cloudDocuments.length} saved document${cloudDocuments.length === 1 ? "" : "s"}.`
-    : "No cloud documents saved yet. Your next upload will show the storage notice.";
+  if (!cloudDocuments.length) {
+    storageStatus.textContent = "No cloud documents saved yet. Your next upload will show the storage notice.";
+  } else {
+    const planSummary = `${upcomingCount} upcoming plan${upcomingCount === 1 ? "" : "s"} and ${historyCount} in Travel history`;
+    const skippedSummary = unrenderableRecords
+      ? ` ${unrenderableRecords} saved record${unrenderableRecords === 1 ? "" : "s"} could not be displayed.`
+      : "";
+    storageStatus.textContent = `Loaded ${cloudDocuments.length} saved document${cloudDocuments.length === 1 ? "" : "s"}: ${planSummary}.${skippedSummary}`;
+  }
 }
 
 function downloadSavedDocument(document) {
@@ -411,6 +440,7 @@ function travelJsonToTicket(json, documentId = null) {
   const document = json.document;
   if (!document) return null;
   const itinerary = document.itinerary?.[0] || {};
+  const documentType = classifyDocumentType(document.document_type, json.evidence || document.evidence || "");
   const passengers = Array.isArray(document.passengers)
     ? document.passengers.filter((passenger) => passenger && typeof passenger === "object")
     : [];
@@ -418,13 +448,16 @@ function travelJsonToTicket(json, documentId = null) {
     ? Object.fromEntries(Object.entries(json.confidence).filter(([, value]) => Number.isFinite(value)))
     : null;
   return {
-    type: document.document_type === "Flight" ? "Flight"
-      : document.document_type === "Train" ? "Train"
-        : document.document_type === "Hotel" ? "Hotel"
-          : document.document_type === "Bus" ? "Bus" : "Ticket",
+    type: documentType === "flight" ? "Flight"
+      : documentType === "train" ? "Train"
+        : documentType === "hotel" ? "Hotel"
+          : documentType === "bus" ? "Bus" : "Ticket",
     number: document.booking_reference || "Not provided",
     pnr: document.booking_reference || "Not provided",
-    date: itinerary.departure_date || "Date not provided",
+    date: normalizeTravelDateRange(
+      itinerary.departure_date || "Date not provided",
+      json.evidence || document.evidence || ""
+    ),
     time: itinerary.departure_time || "Time not provided",
     origin: itinerary.origin || "",
     destination: itinerary.destination || "",
@@ -454,6 +487,10 @@ async function processFiles(files) {
       tickets.push(...parsed);
       parsedCount += parsed.length;
       addLoadedFile(file.name, parsed.length);
+      if (parsed.length) {
+        ticketSearch.value = "";
+        setActiveView(parsed.every(isTravelHistory) ? "Travel history" : "All tickets");
+      }
       if (supabaseUser) {
         try {
           const savedDocument = await saveDocumentToCloud(file, parsed);
@@ -547,15 +584,7 @@ function runTravelIntelligence(fileName, evidenceText, parsedRecords) {
   return parsedRecords.map((record, index) => {
     const evidence = evidenceText.slice(0, 5000);
     const text = `${evidence}\n${Object.values(record).join(" ")}`;
-    const documentType = /\b(?:flight|airline|boarding|airport|e-ticket|departure\s+\d{1,2}\s+[a-z]+|arrival\s+\d{1,2}\s+[a-z]+)\b/i.test(text)
-      ? "flight"
-      : /\bhotel|reservation|check.?in|check.?out\b/i.test(text)
-        ? "hotel"
-        : /\btrain|railway|coach|pnr\b/i.test(text)
-          ? "train"
-          : /\bbus|ticket id|boarding point|traveller details\b/i.test(text)
-            ? "bus"
-            : "other";
+    const documentType = classifyDocumentType(record.type, text);
 
     const normalized = documentType === "hotel"
       ? "Hotel"
@@ -625,12 +654,31 @@ function runTravelIntelligence(fileName, evidenceText, parsedRecords) {
   });
 }
 
-function parseTextFeed(text) {
-  const flightTickets = parseFlightItineraryText(text);
-  if (flightTickets) return flightTickets;
+function classifyDocumentType(declaredType, evidenceText) {
+  const declared = String(declaredType || "").trim().toLowerCase();
+  const evidence = String(evidenceText || "");
 
+  if (declared === "bus" || /\b(?:bus booking|bus ticket|boarding point|drop point|bus stand|bus operator|red\s?bus|non a\/c sleeper)\b/i.test(evidence)) {
+    return "bus";
+  }
+  if (declared === "hotel" || /\b(?:hotel|reservation|check.?in|check.?out)\b/i.test(evidence)) {
+    return "hotel";
+  }
+  if (declared === "train" || /\b(?:train|railway|rail ticket|irctc|platform\s*#?\s*\d+)\b/i.test(evidence)) {
+    return "train";
+  }
+  if (declared === "flight" || /\b(?:flight|airline|airways|airport|boarding pass|flight emissions)\b/i.test(evidence)) {
+    return "flight";
+  }
+  return "other";
+}
+
+function parseTextFeed(text) {
   const busTicket = parseBusTicketText(text);
   if (busTicket) return [busTicket];
+
+  const flightTickets = parseFlightItineraryText(text);
+  if (flightTickets) return flightTickets;
 
   const blocks = text
     .split(/\n\s*\n|(?=^(?:flight|bus|ticket)\s*[:#-])/im)
@@ -733,8 +781,8 @@ function parseFlightItineraryText(text) {
 function normalizeTravelDate(value, evidenceText) {
   const match = String(value).match(/(\d{1,2})\s+([A-Z][a-z]+)(?:\s+(\d{4}))?/);
   if (!match) return String(value);
-  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const monthIndex = months.findIndex((month) => month.toLowerCase() === match[2].toLowerCase());
+  const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const monthIndex = months.indexOf(match[2].slice(0, 3).toLowerCase());
   if (monthIndex < 0) return String(value);
   let year = match[3];
   if (!year && evidenceText) {
@@ -743,6 +791,20 @@ function normalizeTravelDate(value, evidenceText) {
   }
   if (!year) year = new Date().getFullYear();
   return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${match[1].padStart(2, "0")}`;
+}
+
+function normalizeTravelDateRange(value, evidenceText) {
+  const dates = String(value || "Date not provided").split(/\s*(?:→|->)\s*/);
+  const normalized = dates.map((date) => normalizeTravelDate(date, evidenceText));
+  if (normalized.length > 1 && !/\b\d{4}\b/.test(dates[1])) {
+    const departure = getTravelDateParts(normalized[0]);
+    const arrival = getTravelDateParts(normalized[1]);
+    if (departure && arrival && arrival.year === departure.year
+      && (arrival.month < departure.month || (arrival.month === departure.month && arrival.day < departure.day))) {
+      normalized[1] = normalized[1].replace(/^\d{4}/, String(departure.year + 1));
+    }
+  }
+  return normalized.join(" → ");
 }
 
 function parseBusTicketText(text) {
@@ -780,8 +842,8 @@ function parseBusTicketText(text) {
 
   const times = [...text.matchAll(/(?:\b|[^\d])(\d{1,2}:\d{2}\s*(?:AM|PM))/gi)].map((match) => match[1].replace(/\s+/g, " ").toUpperCase());
   const dates = [...text.matchAll(/\b((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s*\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec))\b/gi)].map((match) => match[1]);
-  const boardingDate = dates[0] || "Date not provided";
-  const arrivalDate = dates[1] || "";
+  const boardingDate = dates[0] ? normalizeTravelDate(dates[0], text) : "Date not provided";
+  const arrivalDate = dates[1] ? normalizeTravelDate(dates[1], text) : "";
   const dateDisplay = arrivalDate ? `${boardingDate} → ${arrivalDate}` : boardingDate;
 
   const passengers = [];
@@ -986,15 +1048,19 @@ function renderSavedDocuments() {
 function renderTickets() {
   const search = ticketSearch.value.trim().toLowerCase();
   const visible = tickets.filter((ticket) => {
-    const matchesFilter = activeFilter === "All tickets" || ticket.type === activeFilter;
+    const isHistory = isTravelHistory(ticket);
+    const matchesFilter = activeFilter === "Travel history"
+      ? isHistory
+      : !isHistory && (activeFilter === "All tickets" || ticket.type === activeFilter);
     const matchesSearch = !search || Object.values(ticket).join(" ").toLowerCase().includes(search);
     return matchesFilter && matchesSearch;
   });
 
-  const flights = tickets.filter((ticket) => ticket.type === "Flight").length;
-  const buses = tickets.filter((ticket) => ticket.type === "Bus").length;
+  const upcomingTickets = tickets.filter((ticket) => !isTravelHistory(ticket));
+  const flights = upcomingTickets.filter((ticket) => ticket.type === "Flight").length;
+  const buses = upcomingTickets.filter((ticket) => ticket.type === "Bus").length;
   const passengerNames = new Set();
-  tickets.forEach((ticket) => {
+  upcomingTickets.forEach((ticket) => {
     if (ticket.passengers?.length) {
       ticket.passengers.forEach((passenger) => passengerNames.add(passenger.name));
     } else if (ticket.passenger && ticket.passenger !== "Passenger not provided") {
@@ -1008,11 +1074,18 @@ function renderTickets() {
   document.querySelector("#passenger-count").textContent = String(passengers);
 
   if (!visible.length) {
-    const message = tickets.length ? "No matching tickets" : "No tickets loaded";
-    const detail = tickets.length
-      ? "Try a different search or ticket filter."
-      : "Upload a CSV, JSON, text, or PDF document to populate this board.";
-    ticketList.innerHTML = `<article class="empty-state"><span class="empty-icon">${tickets.length ? "⌕" : "⇧"}</span><h2>${message}</h2><p>${detail}</p></article>`;
+    const historyCount = tickets.filter(isTravelHistory).length;
+    const message = activeFilter === "Travel history"
+      ? "No travel history yet"
+      : upcomingTickets.length ? "No matching tickets" : "No upcoming tickets";
+    const detail = activeFilter === "Travel history"
+      ? "Trips move here after their travel month has passed."
+      : upcomingTickets.length
+        ? "Try a different search or ticket filter."
+        : historyCount
+          ? "Past trips are in Travel history."
+          : "Upload a CSV, JSON, text, or PDF document to populate this board.";
+    ticketList.innerHTML = `<article class="empty-state"><span class="empty-icon">${activeFilter === "Travel history" ? "◷" : upcomingTickets.length ? "⌕" : "⇧"}</span><h2>${message}</h2><p>${detail}</p></article>`;
     return;
   }
 
@@ -1064,6 +1137,56 @@ function renderTickets() {
       </div>
     </article>`;
   }).join("");
+}
+
+function isTravelHistory(ticket, now = new Date()) {
+  const tripDate = getTravelDateParts(ticket.date);
+  if (!tripDate) return false;
+
+  const currentParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit"
+  }).formatToParts(now);
+  const currentYear = Number(currentParts.find((part) => part.type === "year")?.value);
+  const currentMonth = Number(currentParts.find((part) => part.type === "month")?.value);
+  return tripDate.year * 12 + tripDate.month < currentYear * 12 + currentMonth;
+}
+
+function getTravelDateParts(value) {
+  const date = String(value || "").split(/\s*(?:→|->)\s*/)[0].trim();
+  let match = date.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
+  if (match) {
+    const [, yearText, monthText, dayText] = match;
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return { year, month, day };
+  }
+
+  match = date.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
+  if (match) {
+    const year = Number(match[3]) < 100 ? 2000 + Number(match[3]) : Number(match[3]);
+    let month = Number(match[1]);
+    let day = Number(match[2]);
+    if (month > 12 && day <= 12) [month, day] = [day, month];
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return { year, month, day };
+  }
+
+  const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  match = date.match(/\b(\d{1,2})\s+([A-Za-z]{3,9})(?:,?\s+(\d{4}))?\b/)
+    || date.match(/\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,?\s+(\d{4}))?\b/);
+  if (!match) return null;
+
+  const dayFirst = /^\d/.test(match[1]);
+  const monthName = dayFirst ? match[2] : match[1];
+  const month = months.indexOf(monthName.slice(0, 3).toLowerCase()) + 1;
+  if (!month) return null;
+  const day = Number(dayFirst ? match[1] : match[2]);
+  if (day < 1 || day > 31) return null;
+  return { year: Number(match[3]) || new Date().getFullYear(), month, day };
 }
 
 function escapeHtml(value) {

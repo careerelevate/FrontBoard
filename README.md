@@ -5,6 +5,7 @@ A browser-based travel board that extracts flight, bus, train, and hotel details
 ## Features
 
 - Eastern Time clock, searchable ticket feed, and travel-type filters
+- Month-based travel history for completed trips
 - Local extraction from CSV, JSON, TXT, and PDF
 - Google account sign-in for identity only; no Google Drive access is requested
 - First-upload notice and explicit consent before cloud storage
@@ -43,6 +44,14 @@ The project URL and publishable key currently point to the FrontBoard Supabase p
 - The Supabase auth session is held in memory and is not persisted across reloads. The account name and email are stored in browser local storage for display; no Google token is saved there.
 
 Review current [Supabase pricing](https://supabase.com/pricing) and usage limits before relying on cloud storage at scale.
+
+## Tests
+
+Run the storage and travel parsing regression tests with:
+
+```powershell
+node --test frontboard-storage.test.mjs travel-board.test.mjs
+```
 
 ## Legal pages
 
