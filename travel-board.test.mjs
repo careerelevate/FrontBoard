@@ -36,6 +36,37 @@ Arrival 27 November 2026 2:30 PM London (LHR)
 Hotel reservation
 Check-in 27 November 2026`;
 
+const gmailTripConfirmationText = `11/26/26, 11:18 PM   Gmail - Your trip confirmation (EWR - DFW)
+Navis Alfred Jerome Francis <navisalfred82@gmail.com>
+Your trip confirmation (EWR - DFW)
+American Airlines   <no-reply@info.email.aa.com>   Sun, Oct 11, 2026 at 8:50 PM
+To: NAVISALFRED82@gmail.com
+Issued:   October 12, 2026
+Your trip confirmation and receipt
+You can check in via the American app 24 hours before your trip and get your mobile boarding
+pass.
+Confirmation code:   HPSHCE
+Saturday, December 5, 2026
+EWR
+AA 2935
+Newark
+8:00 AM
+DFW
+Seat:   24D
+Dallas/Fort Worth
+Class:   Economy   (B)
+11:21 AM
+Meals:   Food for purchase
+Manage your trip
+Your purchase
+Kokiladevi   Jeyabalan
+Join the AAdvantage Program
+New ticket   $86.51
+Taxes & carrier-imposed fees   $21.89
+Ticket #: 0012384614499
+Standard Seat   (EWR-DFW)   $13.02
+Document #: 0010657652707`;
+
 function createElement() {
   return {
     children: [],
@@ -177,6 +208,33 @@ test("sorts the All tickets view by travel date", async () => {
   const lateIndex = html.indexOf("TK2222");
   assert.ok(earlyIndex !== -1 && lateIndex !== -1, "both flights should render");
   assert.ok(earlyIndex < lateIndex, "earlier travel date should be listed first");
+});
+
+test("parses a Gmail airline trip confirmation PDF into a complete flight ticket", async () => {
+  const board = await loadFrontBoardScript();
+  const parsed = board.parseDocument("Gmail - Your trip confirmation (EWR - DFW).pdf", gmailTripConfirmationText);
+
+  assert.equal(parsed.length, 1, "should produce a single ticket, not junk rows");
+  const [ticket] = parsed;
+  assert.equal(ticket.type, "Flight");
+  assert.equal(ticket.number, "AA2935");
+  assert.equal(ticket.pnr, "HPSHCE");
+  assert.equal(ticket.date, "2026-12-05");
+  assert.equal(ticket.time, "8:00 AM → 11:21 AM");
+  assert.equal(ticket.origin, "Newark");
+  assert.equal(ticket.destination, "Dallas/Fort Worth");
+  assert.equal(ticket.passenger, "Kokiladevi Jeyabalan");
+  assert.equal(ticket.seat, "24D");
+  assert.equal(ticket.flags.length, 0, `expected no flags, got: ${JSON.stringify(ticket.flags)}`);
+
+  await board.processFiles([{ name: "gmail-trip.txt", text: async () => gmailTripConfirmationText }]);
+  board.setActiveView("All tickets");
+  board.renderTickets();
+  const html = board.document.querySelector("#ticket-list").innerHTML;
+  assert.match(html, /Newark/);
+  assert.match(html, /Dallas\/Fort Worth/);
+  assert.doesNotMatch(html, /Route not provided/);
+  assert.doesNotMatch(html, /Date not provided/);
 });
 
 test("combines two tickets for the same trip into one card", async () => {

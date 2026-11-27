@@ -780,6 +780,9 @@ function parseTextFeed(text) {
   const flightTickets = parseFlightItineraryText(text);
   if (flightTickets) return flightTickets;
 
+  const emailTickets = parseTripConfirmationEmail(text);
+  if (emailTickets) return emailTickets;
+
   const blocks = text
     .split(/\n\s*\n|(?=^(?:flight|bus|ticket)\s*[:#-])/im)
     .map((block) => block.trim())
@@ -876,6 +879,142 @@ function parseFlightItineraryText(text) {
       tickets: ticketNumbers
     };
   });
+}
+
+function looksLikePersonName(line) {
+  const collapsed = String(line || "").replace(/\s+/g, " ").trim();
+  if (collapsed.length < 3 || collapsed.length > 60) return false;
+  if (/[@$0-9<>®]/.test(collapsed)) return false;
+  const words = collapsed.split(" ");
+  if (words.length < 2 || words.length > 6) return false;
+  return words.every((word) => /^[A-Z][A-Za-z'’.-]*$/.test(word));
+}
+
+function toIsoDate(monthName, dayText, yearText) {
+  const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const monthIndex = months.indexOf(String(monthName).slice(0, 3).toLowerCase());
+  if (monthIndex < 0) return null;
+  return `${yearText}-${String(monthIndex + 1).padStart(2, "0")}-${String(dayText).padStart(2, "0")}`;
+}
+
+function toTimeMinutes(value) {
+  const match = String(value || "").match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return null;
+  let hours = Number(match[1]) % 12;
+  if (match[3].toUpperCase() === "PM") hours += 12;
+  return hours * 60 + Number(match[2]);
+}
+
+function nextIsoDay(isoDate) {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function cityAfterLine(lines, fromIndex) {
+  for (let index = fromIndex + 1; index < Math.min(lines.length, fromIndex + 8); index += 1) {
+    const line = lines[index].replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    if (/^(?:Seat|Class|Meals|Gate|Terminal|Flight|Aircraft)\s*:/i.test(line)) continue;
+    if (/^\d{1,2}:\d{2}\s*(?:AM|PM)$/i.test(line)) continue;
+    if (/^[A-Z]{2}\s*\d{3,4}$/.test(line)) continue;
+    if (/^[A-Z]{3}$/.test(line)) continue;
+    if (line.length < 3 || !/[a-z]/.test(line)) continue;
+    if (!/^[A-Za-z][A-Za-z .'\/-]*$/.test(line)) continue;
+    return line;
+  }
+  return null;
+}
+
+function parseTripConfirmationEmail(text) {
+  if (!/\b(?:confirmation code|your trip confirmation|trip confirmation)\b/i.test(text)) return null;
+
+  const datePattern = /\b([A-Z][a-z]+day),\s*([A-Z][a-z]+)\s+(\d{1,2}),\s*(\d{4})\b/g;
+  const travelDates = [];
+  let dateMatch;
+  let firstDateIndex = -1;
+  while ((dateMatch = datePattern.exec(text)) !== null) {
+    const iso = toIsoDate(dateMatch[2], dateMatch[3], dateMatch[4]);
+    if (!iso) continue;
+    if (firstDateIndex < 0) firstDateIndex = dateMatch.index;
+    travelDates.push(iso);
+  }
+  if (firstDateIndex < 0 || !travelDates.length) return null;
+
+  const scoped = text.slice(firstDateIndex);
+  const scopedLines = scoped.split(/\r?\n/);
+  const codeBlocklist = new Set(["THE", "AND", "FOR", "NOT", "PDF", "FAQ", "YOU", "ALL", "ARE", "OUR", "CAN", "MAY"]);
+  const codeLineIndexes = [];
+  scopedLines.forEach((line, index) => {
+    const code = line.trim();
+    if (/^[A-Z]{3}$/.test(code) && !codeBlocklist.has(code)) codeLineIndexes.push(index);
+  });
+  const times = [...scoped.matchAll(/\b(\d{1,2}:\d{2})\s*(AM|PM)\b/gi)]
+    .map((match) => `${match[1]} ${match[2].toUpperCase()}`);
+  const flightNumbers = [...text.matchAll(/^[ \t]*([A-Z]{2})[ \t]*(\d{3,4})[ \t]*$/gm)]
+    .map((match) => `${match[1]}${match[2]}`);
+  const routeCount = Math.min(Math.floor(codeLineIndexes.length / 2), Math.floor(times.length / 2));
+  const segmentCount = Math.max(flightNumbers.length, routeCount);
+  if (!segmentCount) return null;
+
+  const confirmationCode = text.match(/confirmation code[:\s]+([A-Z0-9]{4,10})/i)?.[1] || null;
+  const seats = [...text.matchAll(/\bSeat:\s*([A-Z0-9]{1,4})\b/g)].map((match) => match[1]);
+
+  const passengers = [];
+  const purchaseIndex = scopedLines.findIndex((line) => /your purchase/i.test(line));
+  if (purchaseIndex >= 0) {
+    let skipped = 0;
+    for (let index = purchaseIndex + 1; index < scopedLines.length && skipped < 6 && passengers.length < 6; index += 1) {
+      const candidate = scopedLines[index].replace(/\s+/g, " ").trim();
+      if (looksLikePersonName(candidate)) passengers.push({ name: candidate, gender: null, age: null, seat: null });
+      else if (passengers.length) break;
+      else skipped += 1;
+    }
+  }
+  if (!passengers.length) {
+    const listed = text.match(/^(?:Passengers?|Travelers?)\s*:\s*(.+)$/im)?.[1];
+    listed?.split(/\s*(?:,|&)\s*/).filter(looksLikePersonName).forEach((name) => {
+      passengers.push({ name, gender: null, age: null, seat: null });
+    });
+  }
+
+  const tickets = [];
+  for (let index = 0; index < segmentCount; index += 1) {
+    const originCodeLine = codeLineIndexes[index * 2];
+    const destinationCodeLine = codeLineIndexes[index * 2 + 1];
+    const departureTime = times[index * 2];
+    const arrivalTime = times[index * 2 + 1];
+    if (originCodeLine === undefined || destinationCodeLine === undefined || !departureTime || !arrivalTime) break;
+
+    const originCode = scopedLines[originCodeLine].trim();
+    const destinationCode = scopedLines[destinationCodeLine].trim();
+    const departureIso = travelDates[index] || travelDates[0];
+    const departureMinutes = toTimeMinutes(departureTime);
+    const arrivalMinutes = toTimeMinutes(arrivalTime);
+    const arrivalIso = departureMinutes !== null && arrivalMinutes !== null && arrivalMinutes < departureMinutes
+      ? nextIsoDay(departureIso)
+      : departureIso;
+    const segmentSeat = seats[index] || seats[0] || null;
+
+    tickets.push({
+      type: "Flight",
+      number: flightNumbers[index] || "Not provided",
+      pnr: confirmationCode || "Not provided",
+      date: departureIso === arrivalIso ? departureIso : `${departureIso} → ${arrivalIso}`,
+      time: `${departureTime} → ${arrivalTime}`,
+      origin: cityAfterLine(scopedLines, originCodeLine) || originCode,
+      originCode,
+      destination: cityAfterLine(scopedLines, destinationCodeLine) || destinationCode,
+      destinationCode,
+      passenger: passengers.map((passenger) => passenger.name).join(", ") || "Passenger not provided",
+      passengers: passengers.map((passenger) => ({ ...passenger, seat: segmentSeat })),
+      seat: segmentSeat || "Not assigned",
+      status: "Confirmed"
+    });
+  }
+
+  return tickets.length ? tickets : null;
 }
 
 function normalizeTravelDate(value, evidenceText) {
