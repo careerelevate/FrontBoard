@@ -53,7 +53,7 @@ function createElement() {
   };
 }
 
-async function loadFrontBoardScript() {
+async function loadFrontBoardScript(configureWindow) {
   const elements = new Map();
   const document = {
     querySelector: (selector) => {
@@ -66,11 +66,13 @@ async function loadFrontBoardScript() {
   };
   const window = {
     document,
-    addEventListener() {},
+    listeners: {},
+    addEventListener(event, handler) { this.listeners[event] = handler; },
     confirm: () => true,
     alert() {},
     FRONTBOARD_CONFIG: {}
   };
+  configureWindow?.(window);
   const localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   const context = createContext({ document, window, localStorage, setInterval() {} });
   const source = await readFile(new URL("./script.js", import.meta.url), "utf8");
@@ -106,6 +108,52 @@ test("keeps flight segments classified as Flight when the itinerary mentions hot
   assert.equal(ticket.type, "Flight");
   assert.equal(ticket.intelligence.document_type, "Flight");
   assert.equal(legacyRecord.type, "Flight");
+});
+
+test("shows only flights in the Flights view and only buses in the Bus view", async () => {
+  const board = await loadFrontBoardScript();
+  const futureFlightText = flightWithHotelText.replaceAll("27 November 2026", "27 November 2099");
+  const futureBusText = busTicketText.replace("27 Dec", "27 Dec 2099").replace("28 Dec", "28 Dec 2099");
+  await board.processFiles([
+    { name: "itinerary.txt", text: async () => futureFlightText },
+    { name: "bus-ticket.txt", text: async () => futureBusText }
+  ]);
+
+  board.setActiveView("Flights");
+  board.renderTickets();
+  const flightView = board.document.querySelector("#ticket-list").innerHTML;
+  assert.match(flightView, /TK1234/);
+  assert.doesNotMatch(flightView, /CBSU28GB/);
+
+  board.setActiveView("Bus");
+  board.renderTickets();
+  const busView = board.document.querySelector("#ticket-list").innerHTML;
+  assert.match(busView, /CBSU28GB/);
+  assert.doesNotMatch(busView, /TK1234/);
+});
+
+test("keeps the Google account preview hidden until the user opens sign-in", async () => {
+  const renderedButtons = [];
+  const board = await loadFrontBoardScript((window) => {
+    window.FRONTBOARD_CONFIG = { googleClientId: "test-client-id" };
+    window.google = {
+      accounts: {
+        id: {
+          initialize() {},
+          renderButton(element) { renderedButtons.push(element); },
+          prompt() {}
+        }
+      }
+    };
+  });
+
+  assert.equal(renderedButtons.length, 0);
+  board.window.listeners.load?.();
+  assert.equal(renderedButtons.length, 0);
+
+  board.initializeGoogleIdentity();
+  assert.equal(renderedButtons.length, 1);
+  assert.equal(board.document.querySelector("#google-sign-in-fallback").hidden, false);
 });
 
 test("reclassifies previously saved bus JSON and routes trips by travel month", async () => {

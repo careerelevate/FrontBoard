@@ -90,16 +90,7 @@ button { cursor: pointer; }
   text-align: left;
 }
 .provider-button:hover { background: #e4e7ea; }
-.google-g {
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  color: #4285f4;
-  font-family: Arial, sans-serif;
-  font-size: 24px;
-  font-weight: 800;
-}
+.sign-in-dialog #google-sign-in { display: flex; justify-content: center; }
 .account-control { min-width: 170px; display: flex; justify-content: flex-end; }
 .account-control { position: relative; }
 .account-menu {

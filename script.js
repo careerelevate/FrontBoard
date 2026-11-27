@@ -37,7 +37,6 @@ const signedInUser = document.querySelector("#signed-in-user");
 const signedInName = document.querySelector("#signed-in-name");
 const signedInAvatar = document.querySelector("#signed-in-avatar");
 const signInDialog = document.querySelector("#sign-in-dialog");
-const googleProvider = document.querySelector("#google-provider");
 const githubProvider = document.querySelector("#github-provider");
 const accountMenu = document.querySelector("#account-menu");
 const signOutButton = document.querySelector("#sign-out-button");
@@ -90,13 +89,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 signInFallback.addEventListener("click", () => {
-  if (typeof signInDialog?.showModal === "function") signInDialog.showModal();
-});
-
-googleProvider.addEventListener("click", () => {
-  signInDialog.close();
   initializeGoogleIdentity();
-  if (window.google?.accounts?.id) window.google.accounts.id.prompt();
+  if (typeof signInDialog?.showModal === "function") signInDialog.showModal();
 });
 
 githubProvider.addEventListener("click", () => {
@@ -199,8 +193,6 @@ clearTickets.addEventListener("click", () => {
   renderTickets();
 });
 
-window.addEventListener("load", initializeGoogleIdentity);
-
 async function handleGoogleCredential(response) {
   let authUser;
   try {
@@ -212,6 +204,7 @@ async function handleGoogleCredential(response) {
   }
 
   supabaseUser = authUser;
+  if (typeof signInDialog?.close === "function") signInDialog.close();
   ticketSearch.value = "";
   setActiveView("All tickets");
   const user = {
@@ -249,7 +242,6 @@ function showSignedInUser(user) {
   }));
   appShell.hidden = false;
   signInFallback.hidden = true;
-  document.querySelector("#google-sign-in").hidden = true;
   if (signedInUser) signedInUser.hidden = false;
   if (signedInName) signedInName.textContent = user.name;
   if (signedInAvatar) {
@@ -304,7 +296,6 @@ function initializeGoogleIdentity() {
     width: 220
   });
   googleIdentityInitialized = true;
-  signInFallback.hidden = true;
   storageStatus.textContent = "Google sign-in uses account identity only. Cloud storage access is requested when you upload.";
 }
 
@@ -1054,11 +1045,12 @@ function renderSavedDocuments() {
 
 function renderTickets() {
   const search = ticketSearch.value.trim().toLowerCase();
+  const filterType = activeFilter === "Flights" ? "Flight" : activeFilter;
   const visible = tickets.filter((ticket) => {
     const isHistory = isTravelHistory(ticket);
     const matchesFilter = activeFilter === "Travel history"
       ? isHistory
-      : !isHistory && (activeFilter === "All tickets" || ticket.type === activeFilter);
+      : !isHistory && (activeFilter === "All tickets" || ticket.type === filterType);
     const matchesSearch = !search || Object.values(ticket).join(" ").toLowerCase().includes(search);
     return matchesFilter && matchesSearch;
   });
