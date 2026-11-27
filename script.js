@@ -1156,9 +1156,63 @@ function renderSavedDocuments() {
   });
 }
 
+function tripGroupKey(ticket) {
+  return [ticket.type, ticket.origin, ticket.destination, ticket.date, ticket.time]
+    .map((value) => String(value || "").trim().toLowerCase().replace(/\s+/g, " "))
+    .join("|");
+}
+
+function mergeDuplicateTrips(list) {
+  const groups = new Map();
+  list.forEach((ticket) => {
+    const routeKnown = String(ticket.origin || "").trim() || String(ticket.destination || "").trim();
+    const dateKnown = ticket.date && ticket.date !== "Date not provided";
+    if (!routeKnown || !dateKnown) {
+      groups.set(`solo-${groups.size}-${tripGroupKey(ticket)}`, [ticket]);
+      return;
+    }
+    const key = tripGroupKey(ticket);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(ticket);
+    else groups.set(key, [ticket]);
+  });
+
+  return [...groups.values()].map((bucket) => {
+    if (bucket.length === 1) return bucket[0];
+    const [primary, ...duplicates] = bucket;
+    const all = [primary, ...duplicates];
+    const numbers = [...new Set(all.map((ticket) => ticket.number).filter((number) => number && number !== "Not provided"))];
+    const passengers = [];
+    const seenPassengers = new Set();
+    all.forEach((ticket) => {
+      (ticket.passengers || []).forEach((passenger) => {
+        const identity = `${passenger.name}|${passenger.seat || ""}`;
+        if (seenPassengers.has(identity)) return;
+        seenPassengers.add(identity);
+        passengers.push(passenger);
+      });
+    });
+    const flags = [...new Set(all.flatMap((ticket) => ticket.flags || []))];
+    const merged = {
+      ...primary,
+      number: numbers.join(" · ") || primary.number,
+      pnr: [...new Set(all.map((ticket) => ticket.pnr).filter((pnr) => pnr && pnr !== "Not provided"))].join(" · ") || primary.pnr,
+      flags,
+      mergedCount: all.length
+    };
+    if (passengers.length) {
+      merged.passengers = passengers;
+      merged.passenger = passengers.map((passenger) => passenger.name).join(", ");
+      merged.seat = passengers.map((passenger) => passenger.seat).filter(Boolean).join(", ") || "Not assigned";
+    }
+    return merged;
+  });
+}
+
 function renderTickets() {
+  const grouped = mergeDuplicateTrips(tickets);
   const filterType = activeFilter === "Flights" ? "Flight" : activeFilter;
-  const visible = tickets.filter((ticket) => {
+  const visible = grouped.filter((ticket) => {
     const isHistory = isTravelHistory(ticket);
     return activeFilter === "Travel history"
       ? isHistory
@@ -1167,7 +1221,7 @@ function renderTickets() {
   const dateDirection = activeFilter === "Travel history" ? -1 : 1;
   visible.sort((first, second) => compareTravelDates(first, second) * dateDirection);
 
-  const upcomingTickets = tickets.filter((ticket) => !isTravelHistory(ticket));
+  const upcomingTickets = grouped.filter((ticket) => !isTravelHistory(ticket));
   const flights = upcomingTickets.filter((ticket) => ticket.type === "Flight").length;
   const buses = upcomingTickets.filter((ticket) => ticket.type === "Bus").length;
   const passengerNames = new Set();
@@ -1185,7 +1239,7 @@ function renderTickets() {
   document.querySelector("#passenger-count").textContent = String(passengers);
 
   if (!visible.length) {
-    const historyCount = tickets.filter(isTravelHistory).length;
+    const historyCount = grouped.filter(isTravelHistory).length;
     const message = activeFilter === "Travel history"
       ? "No travel history yet"
       : upcomingTickets.length ? "No matching tickets" : "No upcoming tickets";
@@ -1225,6 +1279,9 @@ function renderTickets() {
     const confidenceBadge = averageConfidence !== null
       ? `<span class="confidence-badge">${averageConfidence}% confidence</span>`
       : "";
+    const mergedBadge = ticket.mergedCount > 1
+      ? `<span class="ticket-status merged-status">${ticket.mergedCount} tickets · 1 trip</span>`
+      : "";
     const reviewDetails = ticket.flags?.length
       ? `<div class="review-details"><small>Extraction flags</small>${ticket.flags.map((flag) => `<span>${escapeHtml(flag)}</span>`).join("")}</div>`
       : "";
@@ -1235,6 +1292,7 @@ function renderTickets() {
           <span class="ticket-type ${typeClass}">${icon} ${escapeHtml(typeLabel)}</span>
           <span class="ticket-status">${escapeHtml(ticket.status)}</span>
           ${reviewBadge}
+          ${mergedBadge}
           ${confidenceBadge}
         </div>
         <div class="ticket-route">${route}</div>

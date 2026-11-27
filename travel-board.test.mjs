@@ -179,6 +179,24 @@ test("sorts the All tickets view by travel date", async () => {
   assert.ok(earlyIndex < lateIndex, "earlier travel date should be listed first");
 });
 
+test("combines two tickets for the same trip into one card", async () => {
+  const board = await loadFrontBoardScript();
+  const futureBusText = busTicketText.replace("27 Dec", "27 Dec 2099").replace("28 Dec", "28 Dec 2099");
+  const secondBooking = futureBusText.replace("CBSU28GB", "CBH48MR3");
+  await board.processFiles([
+    { name: "booking-one.txt", text: async () => futureBusText },
+    { name: "booking-two.txt", text: async () => secondBooking }
+  ]);
+
+  board.setActiveView("All tickets");
+  board.renderTickets();
+  const html = board.document.querySelector("#ticket-list").innerHTML;
+  const cards = html.match(/<article class="ticket-card">/g) || [];
+  assert.equal(cards.length, 1, "same trip should render as a single card");
+  assert.match(html, /CBSU28GB · CBH48MR3/);
+  assert.match(html, /2 tickets · 1 trip/);
+});
+
 test("keeps traveller details hidden until the Travellers toggle is clicked", async () => {
   const board = await loadFrontBoardScript();
   const futureFlightText = flightWithHotelText.replaceAll("27 November 2026", "27 November 2099");

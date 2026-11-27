@@ -403,6 +403,7 @@ h2 { font-size: 17px; }
   font-weight: 800;
 }
 .review-status { background: var(--tint-orange); color: var(--orange-ink); }
+.merged-status { background: var(--tint-green); color: var(--green-ink); }
 .review-details {
   grid-column: 1 / -1;
   display: grid;
