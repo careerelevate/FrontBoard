@@ -1,5 +1,4 @@
 const ticketList = document.querySelector("#ticket-list");
-const ticketSearch = document.querySelector("#ticket-search");
 const documentUpload = document.querySelector("#document-upload");
 const dropZone = document.querySelector("#drop-zone");
 const loadedFiles = document.querySelector("#loaded-files");
@@ -13,6 +12,11 @@ const storageConsentDialog = document.querySelector("#storage-consent-dialog");
 const storageConsentCheckbox = document.querySelector("#storage-consent-checkbox");
 const storageConsentAccept = document.querySelector("#storage-consent-accept");
 const storageConsentDecline = document.querySelector("#storage-consent-decline");
+const themeToggle = document.querySelector("#theme-toggle");
+const pdfPreviewDialog = document.querySelector("#pdf-preview-dialog");
+const pdfPreviewTitle = document.querySelector("#pdf-preview-title");
+const pdfPreviewPages = document.querySelector("#pdf-preview-pages");
+const pdfPreviewClose = document.querySelector("#pdf-preview-close");
 
 let tickets = [];
 let activeFilter = "All tickets";
@@ -21,6 +25,9 @@ let googleIdentityInitialized = false;
 let pendingStorageUploads = [];
 let cloudDocuments = [];
 let storageConsentResolver = null;
+let pdfPreviewPdf = null;
+let pdfPreviewZoom = 1;
+let pdfPreviewRenderSeq = 0;
 
 function savedUserIsSignedIn() {
   try {
@@ -64,7 +71,6 @@ signOutButton.addEventListener("click", async () => {
   localStorage.removeItem("frontboard-user");
   signedInUser.hidden = true;
   signInFallback.hidden = false;
-  ticketSearch.value = "";
   setActiveView("All tickets");
   savedDocumentsElement.replaceChildren();
   const emptyMessage = document.createElement("p");
@@ -159,7 +165,16 @@ document.querySelectorAll(".nav-item").forEach((item) => {
   });
 });
 
-ticketSearch.addEventListener("input", renderTickets);
+ticketList.addEventListener("click", (event) => {
+  const toggle = event.target.closest?.(".traveller-toggle");
+  if (!toggle) return;
+  const details = document.querySelector(`#${toggle.getAttribute("aria-controls")}`);
+  if (!details) return;
+  details.hidden = !details.hidden;
+  toggle.setAttribute("aria-expanded", String(!details.hidden));
+  if (details.hidden) toggle.classList.remove("expanded");
+  else toggle.classList.add("expanded");
+});
 
 documentUpload.addEventListener("change", () => {
   processFiles([...documentUpload.files]);
@@ -205,7 +220,6 @@ async function handleGoogleCredential(response) {
 
   supabaseUser = authUser;
   if (typeof signInDialog?.close === "function") signInDialog.close();
-  ticketSearch.value = "";
   setActiveView("All tickets");
   const user = {
     name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || authUser.email || "Google user",
@@ -270,6 +284,37 @@ if (savedUser?.name && savedUser.name !== "Google account") {
 } else if (savedUser) {
   localStorage.removeItem("frontboard-user");
 }
+
+function currentTheme() {
+  return document.documentElement?.dataset?.theme === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (!root) return;
+  if (theme === "dark") root.dataset.theme = "dark";
+  else delete root.dataset.theme;
+  if (themeToggle) {
+    themeToggle.textContent = theme === "dark" ? "☀️" : "🌙";
+    themeToggle.setAttribute("aria-label", theme === "dark" ? "Switch to light theme" : "Switch to dark theme");
+  }
+}
+
+try {
+  applyTheme(localStorage.getItem("frontboard-theme") === "dark" ? "dark" : "light");
+} catch {
+  applyTheme("light");
+}
+
+themeToggle.addEventListener("click", () => {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  applyTheme(next);
+  try {
+    localStorage.setItem("frontboard-theme", next);
+  } catch {
+    /* theme still applies for this session */
+  }
+});
 
 function initializeGoogleIdentity() {
   const config = window.FRONTBOARD_CONFIG;
@@ -417,6 +462,66 @@ function downloadSavedDocument(document) {
   });
 }
 
+function ensurePdfWorker() {
+  if (!window.pdfjsLib) return false;
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  return true;
+}
+
+async function openPdfPreview(savedDocument) {
+  if (!ensurePdfWorker()) throw new Error("PDF reader could not load");
+  pdfPreviewTitle.textContent = savedDocument.source_document || "Document preview";
+  pdfPreviewPages.replaceChildren();
+  const loading = document.createElement("p");
+  loading.className = "pdf-preview-note";
+  loading.textContent = "Loading document…";
+  pdfPreviewPages.append(loading);
+  if (typeof pdfPreviewDialog.showModal === "function") pdfPreviewDialog.showModal();
+  const blob = await window.frontboardStorage.downloadOriginal(savedDocument);
+  pdfPreviewPdf = await window.pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
+  pdfPreviewZoom = 1;
+  await renderPdfPreviewPages();
+}
+
+async function renderPdfPreviewPages() {
+  const pdf = pdfPreviewPdf;
+  if (!pdf) return;
+  const seq = ++pdfPreviewRenderSeq;
+  const dpr = window.devicePixelRatio || 1;
+  pdfPreviewPages.replaceChildren();
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    if (seq !== pdfPreviewRenderSeq) return;
+    const viewport = page.getViewport({ scale: pdfPreviewZoom * dpr });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
+    canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
+    canvas.className = "pdf-preview-page";
+    canvas.setAttribute("aria-label", `Page ${pageNumber}`);
+    pdfPreviewPages.append(canvas);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    if (seq !== pdfPreviewRenderSeq) return;
+  }
+}
+
+pdfPreviewClose.addEventListener("click", () => {
+  if (typeof pdfPreviewDialog.close === "function") pdfPreviewDialog.close();
+});
+
+pdfPreviewPages.addEventListener("dblclick", () => {
+  if (!pdfPreviewPdf) return;
+  pdfPreviewZoom = pdfPreviewZoom >= 2 ? 1 : pdfPreviewZoom + 0.5;
+  renderPdfPreviewPages().catch(() => {});
+});
+
+pdfPreviewDialog.addEventListener("close", () => {
+  pdfPreviewPdf = null;
+  pdfPreviewRenderSeq += 1;
+});
+
 async function deleteSavedDocument(document) {
   if (!window.confirm(`Permanently delete "${document.source_document}" and its travel JSON from your FrontBoard storage?`)) return;
   await window.frontboardStorage.deleteDocument(document);
@@ -479,7 +584,6 @@ async function processFiles(files) {
       parsedCount += parsed.length;
       addLoadedFile(file.name, parsed.length);
       if (parsed.length) {
-        ticketSearch.value = "";
         setActiveView(parsed.every(isTravelHistory) ? "Travel history" : "All tickets");
       }
       if (supabaseUser) {
@@ -512,9 +616,7 @@ async function processFiles(files) {
 async function readDocument(file) {
   const extension = file.name.split(".").pop().toLowerCase();
   if (extension === "pdf") {
-    if (!window.pdfjsLib) throw new Error("PDF reader could not load");
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    if (!ensurePdfWorker()) throw new Error("PDF reader could not load");
 
     const bytes = await file.arrayBuffer();
     const pdf = await window.pdfjsLib.getDocument({ data: bytes }).promise;
@@ -1004,8 +1106,19 @@ function renderSavedDocuments() {
     badge.textContent = String(savedDocument.fileExtension || "doc").toUpperCase();
 
     const details = document.createElement("div");
-    const filename = document.createElement("strong");
+    const isPdf = String(savedDocument.fileExtension || "").toLowerCase() === "pdf";
+    const filename = document.createElement(isPdf ? "button" : "strong");
     filename.textContent = savedDocument.source_document;
+    if (isPdf) {
+      filename.type = "button";
+      filename.className = "file-link";
+      filename.title = "Click to preview";
+      filename.addEventListener("click", () => {
+        openPdfPreview(savedDocument).catch((error) => {
+          storageStatus.textContent = `Could not preview ${savedDocument.source_document}: ${error.message}`;
+        });
+      });
+    }
     const metadata = document.createElement("small");
     const uploadedDate = new Date(savedDocument.uploadedAt);
     const dateLabel = Number.isNaN(uploadedDate.getTime())
@@ -1044,16 +1157,15 @@ function renderSavedDocuments() {
 }
 
 function renderTickets() {
-  const search = ticketSearch.value.trim().toLowerCase();
   const filterType = activeFilter === "Flights" ? "Flight" : activeFilter;
   const visible = tickets.filter((ticket) => {
     const isHistory = isTravelHistory(ticket);
-    const matchesFilter = activeFilter === "Travel history"
+    return activeFilter === "Travel history"
       ? isHistory
       : !isHistory && (activeFilter === "All tickets" || ticket.type === filterType);
-    const matchesSearch = !search || Object.values(ticket).join(" ").toLowerCase().includes(search);
-    return matchesFilter && matchesSearch;
   });
+  const dateDirection = activeFilter === "Travel history" ? -1 : 1;
+  visible.sort((first, second) => compareTravelDates(first, second) * dateDirection);
 
   const upcomingTickets = tickets.filter((ticket) => !isTravelHistory(ticket));
   const flights = upcomingTickets.filter((ticket) => ticket.type === "Flight").length;
@@ -1080,7 +1192,7 @@ function renderTickets() {
     const detail = activeFilter === "Travel history"
       ? "Trips move here after their travel month has passed."
       : upcomingTickets.length
-        ? "Try a different search or ticket filter."
+        ? "Try a different ticket filter."
         : historyCount
           ? "Past trips are in Travel history."
           : "Upload a CSV, JSON, text, or PDF document to populate this board.";
@@ -1093,7 +1205,7 @@ function renderTickets() {
     const typeClass = ["flight", "bus", "hotel", "train"].includes(typeLabel.toLowerCase())
       ? typeLabel.toLowerCase()
       : "ticket";
-    const icon = typeClass === "flight" ? "✈" : typeClass === "bus" ? "▰" : "▦";
+    const icon = typeClass === "flight" ? "✈️" : typeClass === "bus" ? "🚌" : typeClass === "train" ? "🚄" : typeClass === "hotel" ? "🏨" : "🎫";
     const route = ticket.origin || ticket.destination
       ? `${escapeHtml(ticket.origin || "Origin")} <span class="route-arrow">→</span> ${escapeHtml(ticket.destination || "Destination")}`
       : "Route not provided";
@@ -1129,13 +1241,30 @@ function renderTickets() {
         <div class="ticket-number">${escapeHtml(ticket.number)}</div>
       </div>
       <div class="ticket-details">
-        <div><small>Date</small><strong>${escapeHtml(ticket.date)}</strong></div>
-        <div><small>Time</small><strong>${escapeHtml(ticket.time)}</strong></div>
-        <div class="travellers"><small>Travellers</small>${passengerDetails}</div>
+        <div><small>Date</small><strong class="detail-value">${escapeHtml(ticket.date)}</strong></div>
+        <div><small>Time</small><strong class="detail-value">${escapeHtml(ticket.time)}</strong></div>
+        <div class="travellers">
+          <button type="button" class="traveller-toggle" aria-expanded="false" aria-controls="travellers-${index}">Travellers <span class="chevron" aria-hidden="true">▾</span></button>
+          <div class="traveller-details" id="travellers-${index}" hidden>${passengerDetails}</div>
+        </div>
         ${reviewDetails}
       </div>
     </article>`;
   }).join("");
+}
+
+function travelDateKey(ticket) {
+  const parts = getTravelDateParts(ticket.date);
+  return parts ? parts.year * 10000 + parts.month * 100 + parts.day : Number.MAX_SAFE_INTEGER;
+}
+
+function compareTravelDates(first, second) {
+  const firstKey = travelDateKey(first);
+  const secondKey = travelDateKey(second);
+  if (firstKey === secondKey) return 0;
+  if (firstKey === Number.MAX_SAFE_INTEGER) return 1;
+  if (secondKey === Number.MAX_SAFE_INTEGER) return -1;
+  return firstKey - secondKey;
 }
 
 function isTravelHistory(ticket, now = new Date()) {

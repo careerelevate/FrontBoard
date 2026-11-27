@@ -4,7 +4,7 @@ A browser-based travel board that extracts flight, bus, train, and hotel details
 
 ## Features
 
-- Eastern Time clock, searchable ticket feed, and travel-type filters
+- Eastern Time clock, date-sorted ticket feed, and travel-type filters
 - Month-based travel history for completed trips
 - Local extraction from CSV, JSON, TXT, and PDF
 - Google account sign-in for identity only; no Google Drive access is requested

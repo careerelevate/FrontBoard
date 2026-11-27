@@ -56,6 +56,7 @@ function createElement() {
 async function loadFrontBoardScript(configureWindow) {
   const elements = new Map();
   const document = {
+    documentElement: { dataset: {} },
     querySelector: (selector) => {
       if (!elements.has(selector)) elements.set(selector, createElement());
       return elements.get(selector);
@@ -156,6 +157,89 @@ test("keeps the Google account preview hidden until the user opens sign-in", asy
   assert.equal(board.document.querySelector("#google-sign-in-fallback").hidden, false);
 });
 
+test("sorts the All tickets view by travel date", async () => {
+  const board = await loadFrontBoardScript();
+  const lateFlight = flightWithHotelText
+    .replace("TK 1234", "TK 2222")
+    .replaceAll("27 November 2026", "1 December 2099");
+  const earlyFlight = flightWithHotelText
+    .replace("TK 1234", "TK 1111")
+    .replaceAll("27 November 2026", "1 November 2099");
+  await board.processFiles([
+    { name: "later.txt", text: async () => lateFlight },
+    { name: "earlier.txt", text: async () => earlyFlight }
+  ]);
+
+  board.setActiveView("All tickets");
+  board.renderTickets();
+  const html = board.document.querySelector("#ticket-list").innerHTML;
+  const earlyIndex = html.indexOf("TK1111");
+  const lateIndex = html.indexOf("TK2222");
+  assert.ok(earlyIndex !== -1 && lateIndex !== -1, "both flights should render");
+  assert.ok(earlyIndex < lateIndex, "earlier travel date should be listed first");
+});
+
+test("keeps traveller details hidden until the Travellers toggle is clicked", async () => {
+  const board = await loadFrontBoardScript();
+  const futureFlightText = flightWithHotelText.replaceAll("27 November 2026", "27 November 2099");
+  await board.processFiles([{ name: "itinerary.txt", text: async () => futureFlightText }]);
+
+  const html = board.document.querySelector("#ticket-list").innerHTML;
+  assert.match(html, /class="traveller-toggle" aria-expanded="false" aria-controls="travellers-0"/);
+  assert.match(html, /<div class="traveller-details" id="travellers-0" hidden>/);
+  assert.match(html, /class="detail-value"/);
+});
+
+test("offers a preview button for saved PDF documents", async () => {
+  const board = await loadFrontBoardScript();
+  const futureDate = `${new Date().getFullYear() + 1}-12-27`;
+  board.window.frontboardStorage = {
+    signInWithGoogle: async () => ({
+      user_metadata: { full_name: "Test User" },
+      email: "test@example.com"
+    }),
+    listDocuments: async () => ({
+      documents: [{
+        id: "pdf-document",
+        source_document: "itinerary.pdf",
+        uploadedAt: new Date().toISOString(),
+        fileExtension: "pdf",
+        recordCount: 1,
+        records: [{
+          source_document: "itinerary.pdf",
+          evidence: busTicketText,
+          document: {
+            document_type: "Flight",
+            booking_reference: "CBSU28GB",
+            itinerary: [{ departure_date: futureDate }],
+            passengers: []
+          }
+        }]
+      }]
+    })
+  };
+
+  await board.handleGoogleCredential({ credential: "test-token" });
+
+  const row = board.document.querySelector("#saved-documents").children[0];
+  const filename = row.children[1].children[0];
+  assert.equal(filename.className, "file-link");
+  assert.equal(filename.textContent, "itinerary.pdf");
+});
+
+test("switches between the soft light and gentle dark themes", async () => {
+  const board = await loadFrontBoardScript();
+  assert.equal(board.document.documentElement.dataset.theme, undefined);
+
+  board.applyTheme("dark");
+  assert.equal(board.document.documentElement.dataset.theme, "dark");
+  assert.equal(board.document.querySelector("#theme-toggle").textContent, "☀️");
+
+  board.applyTheme("light");
+  assert.equal(board.document.documentElement.dataset.theme, undefined);
+  assert.equal(board.document.querySelector("#theme-toggle").textContent, "🌙");
+});
+
 test("reclassifies previously saved bus JSON and routes trips by travel month", async () => {
   const board = await loadFrontBoardScript();
   const year = new Date().getFullYear();
@@ -217,7 +301,7 @@ test("reloads saved plans after sign-in and displays them in the appropriate vie
   await board.handleGoogleCredential({ credential: "test-token" });
 
   assert.equal(board.document.querySelector("#view-title").textContent, "Upcoming tickets");
-  assert.match(board.document.querySelector("#ticket-list").innerHTML, /▰ Bus/);
+  assert.match(board.document.querySelector("#ticket-list").innerHTML, /🚌 Bus/);
   assert.match(board.document.querySelector("#ticket-list").innerHTML, /CBSU28GB/);
   assert.match(board.document.querySelector("#storage-status").textContent, /1 upcoming plan/);
 });

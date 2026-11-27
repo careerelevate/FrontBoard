@@ -4,6 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#111827">
+    <script>
+      try {
+        if (localStorage.getItem("frontboard-theme") === "dark") document.documentElement.dataset.theme = "dark";
+      } catch (error) {}
+    </script>
     <title>FrontBoard</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
@@ -42,6 +47,18 @@
           </div>
         </div>
       </dialog>
+      <dialog class="pdf-preview-dialog" id="pdf-preview-dialog">
+        <div class="pdf-preview-frame">
+          <div class="pdf-preview-header">
+            <strong id="pdf-preview-title">Document preview</strong>
+            <span class="pdf-preview-hint">Double-click to zoom · scroll to read</span>
+            <button class="pdf-preview-close" id="pdf-preview-close" type="button" aria-label="Close preview">✕</button>
+          </div>
+          <div class="pdf-preview-scroll">
+            <div class="pdf-preview-pages" id="pdf-preview-pages"></div>
+          </div>
+        </div>
+      </dialog>
     <aside class="sidebar">
       <a class="brand" href="#" aria-label="FrontBoard home">
         <span class="brand-mark">F</span>
@@ -52,10 +69,10 @@
           <span aria-hidden="true">◫</span> All tickets
         </button>
         <button class="nav-item" type="button" data-view="Flights">
-          <span aria-hidden="true">✈</span> Flights
+          <span aria-hidden="true">✈️</span> Flights
         </button>
         <button class="nav-item" type="button" data-view="Bus">
-          <span aria-hidden="true">▰</span> Bus
+          <span aria-hidden="true">🚌</span> Bus
         </button>
         <button class="nav-item" type="button" data-view="Travel history">
           <span aria-hidden="true">◷</span> Travel history
@@ -78,10 +95,7 @@
             <h1 id="view-title">Upcoming tickets</h1>
           </div>
           <div class="header-tools">
-            <label class="search-box">
-              <span aria-hidden="true">⌕</span>
-              <input id="ticket-search" type="search" placeholder="Search tickets" aria-label="Search tickets">
-            </label>
+            <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch theme">🌙</button>
             <div class="account-control">
               <button class="sign-in-fallback" id="google-sign-in-fallback" type="button">
                 Sign in
@@ -99,15 +113,15 @@
 
         <div class="summary-row" aria-label="Ticket summary">
           <article class="summary-card">
-            <span class="summary-icon flight">✈</span>
+            <span class="summary-icon flight">✈️</span>
             <div><small>Flights</small><strong id="flight-count">0</strong></div>
           </article>
           <article class="summary-card">
-            <span class="summary-icon bus">▰</span>
+            <span class="summary-icon bus">🚌</span>
             <div><small>Bus</small><strong id="bus-count">0</strong></div>
           </article>
           <article class="summary-card">
-            <span class="summary-icon passenger">◎</span>
+            <span class="summary-icon passenger">👤</span>
             <div><small>Passengers</small><strong id="passenger-count">0</strong></div>
           </article>
         </div>
