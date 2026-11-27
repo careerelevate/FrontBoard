@@ -657,17 +657,24 @@ function runTravelIntelligence(fileName, evidenceText, parsedRecords) {
 function classifyDocumentType(declaredType, evidenceText) {
   const declared = String(declaredType || "").trim().toLowerCase();
   const evidence = String(evidenceText || "");
+  const busEvidence = /\b(?:bus booking|bus ticket|boarding point|drop point|bus stand|bus operator|red\s?bus|non a\/c sleeper)\b/i.test(evidence);
+  const flightEvidence = /\b(?:air(?:ways|lines)\s+[A-Z]{2}\s*\d{1,4}|flight itinerary|airline booking reference|boarding pass)\b/i.test(evidence);
+  const trainEvidence = /\b(?:train|railway|rail ticket|irctc|platform\s*#?\s*\d+)\b/i.test(evidence);
+  const hotelEvidence = /\b(?:hotel|reservation|check.?in|check.?out)\b/i.test(evidence);
 
-  if (declared === "bus" || /\b(?:bus booking|bus ticket|boarding point|drop point|bus stand|bus operator|red\s?bus|non a\/c sleeper)\b/i.test(evidence)) {
+  if (declared === "bus" || busEvidence) {
     return "bus";
   }
-  if (declared === "hotel" || /\b(?:hotel|reservation|check.?in|check.?out)\b/i.test(evidence)) {
-    return "hotel";
+  if (flightEvidence || declared === "flight") {
+    return "flight";
   }
-  if (declared === "train" || /\b(?:train|railway|rail ticket|irctc|platform\s*#?\s*\d+)\b/i.test(evidence)) {
+  if (trainEvidence || declared === "train") {
     return "train";
   }
-  if (declared === "flight" || /\b(?:flight|airline|airways|airport|boarding pass|flight emissions)\b/i.test(evidence)) {
+  if (declared === "hotel" || hotelEvidence) {
+    return "hotel";
+  }
+  if (/\b(?:flight|airline|airways|airport|boarding pass|flight emissions)\b/i.test(evidence)) {
     return "flight";
   }
   return "other";

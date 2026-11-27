@@ -27,6 +27,15 @@ Example Passenger
 Female, 18 years
 LW1`;
 
+const flightWithHotelText = `Turkish Airlines
+Flight itinerary
+Airline Booking Reference: ABCDEF
+Airways TK 1234
+Departure 27 November 2026 10:30 AM Istanbul (IST)
+Arrival 27 November 2026 2:30 PM London (LHR)
+Hotel reservation
+Check-in 27 November 2026`;
+
 function createElement() {
   return {
     children: [],
@@ -79,6 +88,24 @@ test("classifies a PDF-extracted bus ticket as Bus and stores normalized dates",
   assert.equal(ticket.pnr, "ALAQBLMBQ694");
   assert.match(ticket.date, /^\d{4}-12-27 → \d{4}-12-28$/);
   assert.equal(ticket.passengers[0].name, "Example Passenger");
+});
+
+test("keeps flight segments classified as Flight when the itinerary mentions hotels", async () => {
+  const board = await loadFrontBoardScript();
+  const [ticket] = board.parseDocument("itinerary.pdf", flightWithHotelText);
+  const legacyRecord = board.travelJsonToTicket({
+    evidence: flightWithHotelText,
+    document: {
+      document_type: "Hotel",
+      booking_reference: "ABCDEF",
+      itinerary: [{ departure_date: "2026-11-27", origin: "Istanbul", destination: "London" }],
+      passengers: []
+    }
+  });
+
+  assert.equal(ticket.type, "Flight");
+  assert.equal(ticket.intelligence.document_type, "Flight");
+  assert.equal(legacyRecord.type, "Flight");
 });
 
 test("reclassifies previously saved bus JSON and routes trips by travel month", async () => {
